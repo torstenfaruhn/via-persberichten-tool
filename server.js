@@ -272,7 +272,12 @@ app.post('/api/process', requireApiKey, async (req, res) => {
   }
 });
 
-app.get('/api/download', requireApiKey, async (req, res) => {
+/**
+ * OPTIE A:
+ * Download route zonder API-key, omdat browser downloads geen custom header kunnen sturen.
+ * Beveiliging: jobId is een UUID, jobs hebben TTL en worden na download opgeruimd.
+ */
+app.get('/api/download', async (req, res) => {
   const jobId = (req.query.jobId || '').toString();
   const job = jobs.get(jobId);
 
