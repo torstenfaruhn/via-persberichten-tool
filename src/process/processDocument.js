@@ -38,7 +38,7 @@ if(!llm.ok){
   const code = llm.errorCode || 'W010';
   safeLog(`error_code:${code}`);
   return {
-    ok:false,
+    ok: false,
     errorCode: code,
     techHelp: llm.techHelp === true,
     signals: llm.signals || [{ code, message: 'Verwerking mislukt. Probeer het opnieuw.' }]
