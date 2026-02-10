@@ -87,10 +87,11 @@ function isAllowedExt(filename) {
   return ['.txt', '.docx', '.pdf'].includes(ext);
 }
 
-function auditLogStream(res, { processed, errorCode }) {
+function auditLogStream(res, { processed, errorCode, diag }) {
   const payload = {
     processed: Boolean(processed),
     errorCode: errorCode || null,
+    diag: diag || null,
     timestamp: new Date().toISOString()
   };
   const data = Buffer.from(JSON.stringify(payload, null, 2), 'utf8');
@@ -211,14 +212,27 @@ app.post('/api/process', requireApiKey, async (req, res) => {
 
     if (!result || result.ok !== true) {
       const errorCode = result?.errorCode || 'W010';
+      const diag = result?.diag || null;
+
       job.status = 'error';
       safeLog(`error_code:${errorCode}`);
+
+      const qs = new URLSearchParams();
+      qs.set('jobId', jobId);
+      qs.set('code', errorCode);
+
+      if (diag && typeof diag === 'object') {
+        if (diag.stage) qs.set('stage', String(diag.stage));
+        if (typeof diag.httpStatus === 'number') qs.set('httpStatus', String(diag.httpStatus));
+        if (diag.errName) qs.set('errName', String(diag.errName));
+        if (diag.errCode) qs.set('errCode', String(diag.errCode));
+      }
 
       return res.status(400).json({
         status: 'error',
         signals: result?.signals || [{ code: errorCode, message: 'Verwerking mislukt. Probeer het opnieuw.' }],
         techHelp: Boolean(result?.techHelp),
-        auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=${encodeURIComponent(errorCode)}`
+        auditLogUrl: `/api/error-log?${qs.toString()}`
       });
     }
 
@@ -283,7 +297,17 @@ app.get('/api/download', requireApiKey, async (req, res) => {
 app.get('/api/error-log', async (req, res) => {
   const jobId = (req.query.jobId || '').toString();
   const code = (req.query.code || 'W010').toString();
-  auditLogStream(res, { processed: false, errorCode: code });
+
+  const diag = {
+    stage: (req.query.stage || '').toString() || null,
+    httpStatus: Number(req.query.httpStatus || 0) || 0,
+    errName: (req.query.errName || '').toString() || null,
+    errCode: (req.query.errCode || '').toString() || null
+  };
+
+  const hasDiag = diag.stage || diag.httpStatus || diag.errName || diag.errCode;
+
+  auditLogStream(res, { processed: false, errorCode: code, diag: hasDiag ? diag : null });
   if (jobId) cleanupJob(jobId);
 });
 
