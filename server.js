@@ -7,22 +7,27 @@ const fsp = require('fs/promises');
 const os = require('os');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const { safeLog } = require('./src/security/safeLog');
 
+const { safeLog } = require('./src/security/safeLog');
 const { processDocument } = require('./src/process/processDocument');
 
 const app = express();
 app.disable('x-powered-by');
 
 const PORT = process.env.PORT || 3000;
+
+// Upload limits
 const MAX_UPLOAD_MB = Number(process.env.MAX_UPLOAD_MB || '10');
 const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
+// Job storage (ephemeral)
 const TMP_ROOT = path.join(os.tmpdir(), 'via-tool');
 const JOB_TTL_MS = 30 * 60 * 1000;
 
+// In-memory job registry
 const jobs = new Map(); // jobId -> { dir, inputPath, outputPath, createdAt, status }
 
+// Security headers + CSP (no tracking/scripts)
 app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
   res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -30,6 +35,7 @@ app.use((req, res, next) => {
   res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
   res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
   res.setHeader('Permissions-Policy', 'geolocation=(), microphone=(), camera=()');
+
   res.setHeader(
     'Content-Security-Policy',
     [
@@ -48,7 +54,7 @@ app.use((req, res, next) => {
   next();
 });
 
-// Basic in-memory rate limit (technical only)
+// Minimal rate limit (technical only). Note: behind proxies, consider app.set('trust proxy', 1).
 const rate = new Map(); // ip -> { count, resetAt }
 const RATE_WINDOW_MS = 60 * 1000;
 const RATE_MAX = 60;
@@ -72,6 +78,7 @@ app.use((req, res, next) => {
       auditLogUrl: null
     });
   }
+
   next();
 });
 
@@ -94,6 +101,7 @@ function auditLogStream(res, { processed, errorCode, diag }) {
     diag: diag || null,
     timestamp: new Date().toISOString()
   };
+
   const data = Buffer.from(JSON.stringify(payload, null, 2), 'utf8');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="via-tool-audit.json"');
@@ -107,9 +115,12 @@ async function cleanupJob(jobId) {
   jobs.delete(jobId);
   try {
     await fsp.rm(job.dir, { recursive: true, force: true });
-  } catch (_) {}
+  } catch (_) {
+    // ignore
+  }
 }
 
+// TTL cleanup
 setInterval(() => {
   const now = Date.now();
   for (const [jobId, job] of jobs.entries()) {
@@ -134,6 +145,23 @@ function requireApiKey(req, res, next) {
   }
   req.apiKey = apiKey;
   next();
+}
+
+// Helper: build audit-log URL with diag fields (technical only)
+function buildAuditLogUrl({ jobId, errorCode, diag }) {
+  const qs = new URLSearchParams();
+  qs.set('jobId', String(jobId || ''));
+  qs.set('code', String(errorCode || 'W010'));
+
+  if (diag && typeof diag === 'object') {
+    if (diag.stage) qs.set('stage', String(diag.stage));
+    if (typeof diag.httpStatus === 'number') qs.set('httpStatus', String(diag.httpStatus));
+    if (diag.errName) qs.set('errName', String(diag.errName));
+    if (diag.errCode) qs.set('errCode', String(diag.errCode));
+    if (diag.missingParam) qs.set('missingParam', String(diag.missingParam));
+  }
+
+  return `/api/error-log?${qs.toString()}`;
 }
 
 app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) => {
@@ -217,22 +245,11 @@ app.post('/api/process', requireApiKey, async (req, res) => {
       job.status = 'error';
       safeLog(`error_code:${errorCode}`);
 
-      const qs = new URLSearchParams();
-      qs.set('jobId', jobId);
-      qs.set('code', errorCode);
-
-      if (diag && typeof diag === 'object') {
-        if (diag.stage) qs.set('stage', String(diag.stage));
-        if (typeof diag.httpStatus === 'number') qs.set('httpStatus', String(diag.httpStatus));
-        if (diag.errName) qs.set('errName', String(diag.errName));
-        if (diag.errCode) qs.set('errCode', String(diag.errCode));
-      }
-
       return res.status(400).json({
         status: 'error',
         signals: result?.signals || [{ code: errorCode, message: 'Verwerking mislukt. Probeer het opnieuw.' }],
         techHelp: Boolean(result?.techHelp),
-        auditLogUrl: `/api/error-log?${qs.toString()}`
+        auditLogUrl: buildAuditLogUrl({ jobId, errorCode, diag })
       });
     }
 
@@ -250,7 +267,7 @@ app.post('/api/process', requireApiKey, async (req, res) => {
       status: 'error',
       signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }],
       techHelp: true,
-      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`
+      auditLogUrl: buildAuditLogUrl({ jobId, errorCode: 'W010', diag: null })
     });
   }
 });
@@ -289,11 +306,13 @@ app.get('/api/download', requireApiKey, async (req, res) => {
       status: 'error',
       signals: [{ code: 'W010', message: 'Technisch probleem bij downloaden. Probeer het opnieuw.' }],
       techHelp: true,
-      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`
+      auditLogUrl: buildAuditLogUrl({ jobId, errorCode: 'W010', diag: null })
     });
   }
 });
 
+// Audit log endpoint: no storage, streams download immediately.
+// Includes missingParam if provided.
 app.get('/api/error-log', async (req, res) => {
   const jobId = (req.query.jobId || '').toString();
   const code = (req.query.code || 'W010').toString();
@@ -302,12 +321,18 @@ app.get('/api/error-log', async (req, res) => {
     stage: (req.query.stage || '').toString() || null,
     httpStatus: Number(req.query.httpStatus || 0) || 0,
     errName: (req.query.errName || '').toString() || null,
-    errCode: (req.query.errCode || '').toString() || null
+    errCode: (req.query.errCode || '').toString() || null,
+    missingParam: (req.query.missingParam || '').toString() || null
   };
 
-  const hasDiag = diag.stage || diag.httpStatus || diag.errName || diag.errCode;
+  const hasDiag = diag.stage || diag.httpStatus || diag.errName || diag.errCode || diag.missingParam;
 
-  auditLogStream(res, { processed: false, errorCode: code, diag: hasDiag ? diag : null });
+  auditLogStream(res, {
+    processed: false,
+    errorCode: code,
+    diag: hasDiag ? diag : null
+  });
+
   if (jobId) cleanupJob(jobId);
 });
 
