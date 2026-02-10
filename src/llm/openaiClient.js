@@ -23,7 +23,6 @@ function safeParse(txt) {
   }
 }
 
-// Alleen technische diagnosevelden. Geen tekst, geen API-key.
 function buildDiag(err) {
   return {
     stage: 'openai_call',
@@ -46,7 +45,6 @@ function classifyOpenAIError(err) {
       signals: [{ code: 'E401', message: 'AI weigert de API-key (401). Controleer of de key klopt en toegang heeft.' }]
     };
   }
-
   if (s === 404) {
     return {
       ok: false,
@@ -56,7 +54,6 @@ function classifyOpenAIError(err) {
       signals: [{ code: 'E404', message: 'AI-model niet beschikbaar (404). Controleer de ingestelde modelnaam.' }]
     };
   }
-
   if (s === 429) {
     return {
       ok: false,
@@ -67,7 +64,6 @@ function classifyOpenAIError(err) {
     };
   }
 
-  // Netwerk/egress issues (status vaak 0)
   const netCodes = new Set(['ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED']);
   if (diag.errCode && netCodes.has(diag.errCode)) {
     return {
@@ -76,6 +72,17 @@ function classifyOpenAIError(err) {
       techHelp: true,
       diag,
       signals: [{ code: 'E0NET', message: 'Netwerkprobleem richting AI. Probeer het opnieuw.' }]
+    };
+  }
+
+  // 400 met missing_required_parameter blijft 400, maar is meestal een bug in ons request
+  if (s === 400 && diag.errCode === 'missing_required_parameter') {
+    return {
+      ok: false,
+      errorCode: 'E400REQ',
+      techHelp: true,
+      diag,
+      signals: [{ code: 'E400REQ', message: 'Interne fout: AI-request mist een verplicht veld. (input/instructions)' }]
     };
   }
 
@@ -88,12 +95,34 @@ function classifyOpenAIError(err) {
   };
 }
 
+function normalizeToText(value) {
+  if (value === null || value === undefined) return '';
+  if (typeof value === 'string') return value;
+  try {
+    return JSON.stringify(value);
+  } catch (_) {
+    return String(value);
+  }
+}
+
 async function callLLM({ apiKey, instructions, input, model }) {
   const client = new OpenAI({ apiKey });
+
+  const normInstructions = normalizeToText(instructions).trim();
+  const normInput = normalizeToText(input).trim();
+
+  // Hard guard: Responses API heeft een geldige input nodig.
+  // Als dit leeg is, krijg je 400 missing_required_parameter.
+  if (!normInput) {
+    // Geen exception; we willen een nette, eigen fout terug.
+    const faux = { status: 400, code: 'missing_required_parameter', name: 'Error' };
+    throw faux;
+  }
+
   const resp = await client.responses.create({
     model: model || 'gpt-4o-mini',
-    instructions,
-    input,
+    instructions: normInstructions || undefined,
+    input: normInput,
     store: false,
     text: {
       format: {
@@ -102,6 +131,7 @@ async function callLLM({ apiKey, instructions, input, model }) {
       }
     }
   });
+
   return extractJsonText(resp);
 }
 
@@ -113,13 +143,13 @@ async function generateStructured({ apiKey, instructions, input, model, retryOnc
 
     if (retryOnce) {
       const strictInstr =
-        instructions + '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+        normalizeToText(instructions) +
+        '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
       const txt2 = await callLLM({ apiKey, instructions: strictInstr, input, model });
       const p2 = safeParse(txt2 || '');
       if (p2.ok) return { ok: true, data: p2.data };
     }
 
-    // Geen exception, maar geen parseerbare JSON: behandel als technische fout.
     return classifyOpenAIError(null);
   } catch (err) {
     return classifyOpenAIError(err);
