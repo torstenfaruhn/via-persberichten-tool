@@ -33,22 +33,36 @@ function normalizeToText(value) {
   }
 }
 
-// Alleen technische diagnosevelden. Geen tekst, geen API-key.
-function buildDiag(err) {
-  const status = Number(err?.status || err?.response?.status || 0) || 0;
-
-  // OpenAI errors bevatten vaak een param-veld in verschillende vormen.
-  const missingParam =
+function extractMissingParam(err) {
+  // 1) Bekende plekken (verschilt per SDK)
+  const p =
     (err?.param ? String(err.param) : null) ||
     (err?.error?.param ? String(err.error.param) : null) ||
     (err?.response?.data?.error?.param ? String(err.response.data.error.param) : null);
+
+  if (p) return p;
+
+  // 2) Uit message halen (technisch, geen inhoud van documenten)
+  const msg = String(err?.message || '');
+  // Variaties die vaak voorkomen:
+  // "Missing required parameter: input"
+  // "missing required parameter: model"
+  const m = msg.match(/missing required parameter:\s*([a-zA-Z0-9_.-]+)/i);
+  if (m && m[1]) return m[1];
+
+  return null;
+}
+
+// Alleen technische diagnosevelden. Geen tekst, geen API-key.
+function buildDiag(err) {
+  const status = Number(err?.status || err?.response?.status || 0) || 0;
 
   return {
     stage: 'openai_call',
     httpStatus: status,
     errName: err?.name ? String(err.name) : null,
     errCode: err?.code ? String(err.code) : null,
-    missingParam: missingParam || null
+    missingParam: extractMissingParam(err)
   };
 }
 
@@ -95,19 +109,14 @@ function classifyOpenAIError(err) {
     };
   }
 
-  // 400 missing_required_parameter => request bug / leeg veld
   if (s === 400 && diag.errCode === 'missing_required_parameter') {
+    const mp = diag.missingParam ? ` (${diag.missingParam})` : '';
     return {
       ok: false,
       errorCode: 'E400REQ',
       techHelp: true,
       diag,
-      signals: [
-        {
-          code: 'E400REQ',
-          message: 'Interne fout: AI-request mist een verplicht veld. Controleer model/input.'
-        }
-      ]
+      signals: [{ code: 'E400REQ', message: `Interne fout: AI-request mist een verplicht veld${mp}.` }]
     };
   }
 
@@ -124,20 +133,16 @@ async function callLLM({ apiKey, instructions, input, model }) {
   const client = new OpenAI({ apiKey });
 
   const normInstructions = normalizeToText(instructions).trim();
-
-  // Cruciaal: whitespace mag niet als “geldige” input/model tellen
   const normInput = normalizeToText(input).trim();
   const normModel = normalizeToText(model).trim() || 'gpt-4o-mini';
 
   if (!normInput) {
-    // Eigen, gecontroleerde fout die netjes in diag terechtkomt
-    const faux = { status: 400, code: 'missing_required_parameter', param: 'input', name: 'Error' };
+    const faux = { status: 400, code: 'missing_required_parameter', param: 'input', name: 'Error', message: 'Missing required parameter: input' };
     throw faux;
   }
 
   const resp = await client.responses.create({
     model: normModel,
-    // instructions is optioneel; als leeg, niet meesturen
     ...(normInstructions ? { instructions: normInstructions } : {}),
     input: normInput,
     store: false,
