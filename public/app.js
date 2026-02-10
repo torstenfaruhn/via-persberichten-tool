@@ -101,15 +101,41 @@
     return { ok: res.ok, json };
   }
 
+  function showGenericUploadW010() {
+    setSignals(
+      [
+        {
+          code: "W010",
+          message: "Technisch probleem tijdens upload. Probeer een ander bestand of herlaad de pagina.",
+        },
+      ],
+      true
+    );
+  }
+
+  function showGenericProcessW010() {
+    setSignals(
+      [
+        {
+          code: "W010",
+          message: "Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.",
+        },
+      ],
+      true
+    );
+  }
+
   el.apiKey.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const val = (el.apiKey.value || "").trim();
     apiKey = val.length ? val : null;
+
     if (!apiKey) {
       el.apiKeyError.textContent = "API-key is vereist om verder te gaan.";
       setState("init");
       return;
     }
+
     el.apiKeyError.textContent = "";
     setState("keyReady");
   });
@@ -121,6 +147,7 @@
 
   el.fileInput.addEventListener("change", async () => {
     if (!requireKeyOrShowError()) return;
+
     const f = el.fileInput.files && el.fileInput.files[0];
     if (!f) return;
 
@@ -133,12 +160,14 @@
     setState("processing");
     const { ok, json } = await postForm("/api/upload", form, { "X-API-Key": apiKey });
 
-    if (!ok || !json) {
-      setSignals([{ code: "W010", message: "Technisch probleem tijdens upload. Probeer een ander bestand of herlaad de pagina." }], true);
+    // 1) Geen JSON kunnen lezen => echte technische fout / HTML response / proxy error
+    if (!json) {
+      showGenericUploadW010();
       setState("error");
       return;
     }
 
+    // 2) Server geeft een expliciete fout terug (kan ook bij HTTP 400/500)
     if (json.status === "error") {
       setSignals(json.signals || [], json.techHelp === true);
       if (json.auditLogUrl) window.location.href = json.auditLogUrl;
@@ -146,6 +175,18 @@
       return;
     }
 
+    // 3) HTTP niet-ok maar wél JSON: toon server-signals als die er zijn
+    if (!ok) {
+      setSignals(
+        json.signals || [{ code: "W010", message: "Upload mislukt. Probeer het opnieuw." }],
+        json.techHelp === true
+      );
+      if (json.auditLogUrl) window.location.href = json.auditLogUrl;
+      setState("error");
+      return;
+    }
+
+    // 4) Succes
     jobId = json.jobId;
     setState("fileReady");
   });
@@ -157,12 +198,14 @@
     setState("processing");
     const { ok, json } = await postJson("/api/process", { jobId }, { "X-API-Key": apiKey });
 
-    if (!ok || !json) {
-      setSignals([{ code: "W010", message: "Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw." }], true);
+    // 1) Geen JSON kunnen lezen => echte technische fout / HTML response / proxy error
+    if (!json) {
+      showGenericProcessW010();
       setState("error");
       return;
     }
 
+    // 2) Server geeft een expliciete fout terug (kan ook bij HTTP 400/500)
     if (json.status === "error") {
       setSignals(json.signals || [], json.techHelp === true);
       if (json.auditLogUrl) window.location.href = json.auditLogUrl;
@@ -170,6 +213,18 @@
       return;
     }
 
+    // 3) HTTP niet-ok maar wél JSON: toon server-signals als die er zijn
+    if (!ok) {
+      setSignals(
+        json.signals || [{ code: "W010", message: "Verwerking mislukt. Probeer het opnieuw." }],
+        json.techHelp === true
+      );
+      if (json.auditLogUrl) window.location.href = json.auditLogUrl;
+      setState("error");
+      return;
+    }
+
+    // 4) Succes
     setSignals(json.signals || [], false);
     setState("done");
   });
