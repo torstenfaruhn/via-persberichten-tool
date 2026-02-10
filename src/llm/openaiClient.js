@@ -2,6 +2,38 @@
 const OpenAI=require('openai');
 const {LLM_SCHEMA}=require('./schema');
 
+function classifyOpenAIError(err){
+  const status = Number(err?.status || err?.response?.status || 0);
+
+  if(status === 401){
+    return {
+      errorCode: 'E401',
+      techHelp: false,
+      signals: [{ code: 'E401', message: 'AI weigert de API-key (401). Controleer of de key klopt en toegang heeft.' }]
+    };
+  }
+  if(status === 404){
+    return {
+      errorCode: 'E404',
+      techHelp: true,
+      signals: [{ code: 'E404', message: 'AI-model niet beschikbaar (404). Controleer het ingestelde model.' }]
+    };
+  }
+  if(status === 429){
+    return {
+      errorCode: 'E429',
+      techHelp: true,
+      signals: [{ code: 'E429', message: 'Te veel AI-aanvragen (429). Wacht even en probeer het opnieuw.' }]
+    };
+  }
+
+  return {
+    errorCode: 'W010',
+    techHelp: true,
+    signals: [{ code: 'W010', message: 'Technisch probleem bij AI-verwerking. Probeer het opnieuw.' }]
+  };
+}
+
 function extractJsonText(resp){
   if(!resp) return null;
   if(typeof resp.output_text==='string'&&resp.output_text.trim()) return resp.output_text.trim();
@@ -39,10 +71,11 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
       if(p2.ok) return {ok:true,data:p2.data};
     }
 
-    return {ok:false, ...classifyOpenAIError({})};
-  }catch(err){
-    return {ok:false, ...classifyOpenAIError(err)};
-  }
+return { ok:false, ...classifyOpenAIError(null) };
+}catch(err){
+  return { ok:false, ...classifyOpenAIError(err) };
+}
+
 }
 
 module.exports={generateStructured};
