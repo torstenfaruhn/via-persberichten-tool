@@ -1,5 +1,4 @@
 'use strict';
-
 const fs = require('fs/promises');
 const { safeLog } = require('../security/safeLog');
 const { extractText } = require('./extractText');
@@ -13,20 +12,14 @@ const { generateStructured } = require('../llm/openaiClient');
 async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   const start = Date.now();
   const max = Number(maxSeconds || 360);
-
   const timeLeftOk = () => (Date.now() - start) / 1000 < max;
 
   try {
     const ex = await extractText(inputPath);
     if (!ex.ok) {
-      // ex.signals bevat al nette foutmelding (E002/E003 etc.)
-      safeLog(`error_code:${ex.errorCode || 'E002'}`);
-      return {
-        ok: false,
-        errorCode: ex.errorCode || 'E002',
-        techHelp: ex.techHelp === true,
-        signals: ex.signals || []
-      };
+      const code = ex.errorCode || 'E002';
+      safeLog(`error_code:${code}`);
+      return { ok: false, errorCode: code, techHelp: ex.techHelp === true, signals: ex.signals || [] };
     }
 
     if (!timeLeftOk()) {
@@ -35,11 +28,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: 'E005',
         techHelp: true,
-        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+        signals: [
+          { code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }
+        ]
       };
     }
 
-    // Detectoren (worden gebruikt in validators)
     const detector = detectSecondPressRelease(ex.rawText);
     const contact = detectContactBlock(ex.rawText);
 
@@ -61,7 +55,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: code,
         techHelp: llm.techHelp === true,
-        // Belangrijk: niet overschrijven naar W010; laat de echte signals door.
+        diag: llm.diag || null,
         signals: llm.signals || [{ code, message: 'Verwerking mislukt. Probeer het opnieuw.' }]
       };
     }
@@ -72,7 +66,9 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: 'E005',
         techHelp: true,
-        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+        signals: [
+          { code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }
+        ]
       };
     }
 
