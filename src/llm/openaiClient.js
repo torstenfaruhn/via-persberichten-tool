@@ -34,7 +34,6 @@ function normalizeToText(value) {
 }
 
 function extractMissingParam(err) {
-  // 1) Bekende plekken (verschilt per SDK)
   const p =
     (err?.param ? String(err.param) : null) ||
     (err?.error?.param ? String(err.error.param) : null) ||
@@ -42,21 +41,15 @@ function extractMissingParam(err) {
 
   if (p) return p;
 
-  // 2) Uit message halen (technisch, geen inhoud van documenten)
   const msg = String(err?.message || '');
-  // Variaties die vaak voorkomen:
-  // "Missing required parameter: input"
-  // "missing required parameter: model"
   const m = msg.match(/missing required parameter:\s*([a-zA-Z0-9_.-]+)/i);
   if (m && m[1]) return m[1];
 
   return null;
 }
 
-// Alleen technische diagnosevelden. Geen tekst, geen API-key.
 function buildDiag(err) {
   const status = Number(err?.status || err?.response?.status || 0) || 0;
-
   return {
     stage: 'openai_call',
     httpStatus: status,
@@ -137,21 +130,34 @@ async function callLLM({ apiKey, instructions, input, model }) {
   const normModel = normalizeToText(model).trim() || 'gpt-4o-mini';
 
   if (!normInput) {
-    const faux = { status: 400, code: 'missing_required_parameter', param: 'input', name: 'Error', message: 'Missing required parameter: input' };
+    const faux = {
+      status: 400,
+      code: 'missing_required_parameter',
+      param: 'input',
+      name: 'Error',
+      message: 'Missing required parameter: input'
+    };
     throw faux;
   }
+
+  // Compatibel format:
+  // Jouw API vraagt expliciet om text.format.name (en waarschijnlijk ook schema/strict).
+  // We zetten name/schema/strict daarom op het hoogste niveau,
+  // en laten óók de json_schema wrapper staan voor omgevingen die dat verwachten.
+  const format = {
+    type: 'json_schema',
+    name: LLM_SCHEMA.name,
+    schema: LLM_SCHEMA.schema,
+    strict: true,
+    json_schema: { name: LLM_SCHEMA.name, schema: LLM_SCHEMA.schema, strict: true }
+  };
 
   const resp = await client.responses.create({
     model: normModel,
     ...(normInstructions ? { instructions: normInstructions } : {}),
     input: normInput,
     store: false,
-    text: {
-      format: {
-        type: 'json_schema',
-        json_schema: { name: LLM_SCHEMA.name, schema: LLM_SCHEMA.schema, strict: true }
-      }
-    }
+    text: { format }
   });
 
   return extractJsonText(resp);
