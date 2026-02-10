@@ -34,10 +34,16 @@ async function processDocument({inputPath,outputPath,apiKey,maxSeconds}){
       retryOnce: true
     });
 
-    if(!llm.ok){
-      safeLog('error_code:W010');
-      return {ok:false,errorCode:llm.errorCode||'W010',techHelp:true,signals:[{code:'W010',message:'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.'}]};
-    }
+if(!llm.ok){
+  const code = llm.errorCode || 'W010';
+  safeLog(`error_code:${code}`);
+  return {
+    ok:false,
+    errorCode: code,
+    techHelp: llm.techHelp === true,
+    signals: llm.signals || [{ code, message: 'Verwerking mislukt. Probeer het opnieuw.' }]
+  };
+}
 
     if(!timeLeftOk()) return {ok:false,errorCode:'E005',techHelp:true,signals:[{code:'E005',message:'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.'}]};
 
