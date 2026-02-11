@@ -72,12 +72,14 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       };
     }
 
-    const { errors, warnings } = runValidators({
-      sourceCharCount: ex.charCount,
-      llmData: llm.data,
-      detectorResult: detector,
-      contactInfo: contact
-    });
+const {errors,warnings}=runValidators({
+  sourceCharCount: ex.charCount,
+  llmData: llm.data,
+  detectorResult: detector,
+  contactInfo: contact,
+  sourceText: ex.rawText || ex.text
+});
+
 
     if (errors.length > 0) {
       safeLog(`error_code:${errors[0].code}`);
