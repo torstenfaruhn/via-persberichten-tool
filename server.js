@@ -174,15 +174,20 @@ app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) =
 
     safeLog('job_status:uploaded');
     return res.status(200).json({ status: 'ok', jobId });
-  } catch (_) {
-    safeLog('error_code:W010');
-    return res.status(500).json({
-      status: 'error',
-      signals: [{ code: 'W010', message: 'Technisch probleem tijdens upload. Probeer het opnieuw.' }],
-      techHelp: true,
-      auditLogUrl: null
-    });
-  }
+} catch (err) {
+  job.status = 'error';
+  const traceId = `t_${jobId}_${Date.now()}`;
+  safeLogError(err, { at: 'api/process', code: 'W010', traceId });
+
+  return res.status(500).json({
+    status: 'error',
+    signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }],
+    techHelp: true,
+    auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`,
+    traceId
+  });
+}
+
 });
 
 app.post('/api/process', requireApiKey, async (req, res) => {
