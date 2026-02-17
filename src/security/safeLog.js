@@ -17,14 +17,18 @@ function safeLogError(err, meta = {}) {
       at: meta.at || 'unknown',
       traceId: meta.traceId || null,
       code: meta.code || null,
-      // technische kenmerken
+
       name: err?.name || null,
-      errCode: err?.code || null,         // bv. ENOENT, ETIMEDOUT
+      errCode: err?.code || null, // bv ENOENT, ETIMEDOUT
       status: Number(err?.status || err?.response?.status || 0) || null,
-      type: err?.type || null,            // sommige SDK's gebruiken dit
-      // stack: alleen eerste regel (locatie), geen volledige stack dump
-      stack0: typeof err?.stack === 'string' ? err.stack.split('\n')[0].slice(0, 200) : null
+      type: err?.type || null,
+
+      // Keuze 1A: alleen eerste stackregel
+      stack0: typeof err?.stack === 'string'
+        ? err.stack.split('\n')[0].slice(0, 200)
+        : null
     };
+
     console.log(JSON.stringify(payload));
   } catch (_) {
     safeLog('error_logger_failed');
