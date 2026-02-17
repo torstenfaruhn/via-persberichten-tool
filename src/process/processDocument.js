@@ -6,7 +6,7 @@ const {detectSecondPressRelease}=require('./secondPressReleaseDetector');
 const {detectContactBlock}=require('./contactDetect');
 const {loadStylebookText}=require('./stylebookLoader');
 const {runValidators}=require('./runValidators');
-const {enforceMaxLengths}=require('./enforceLengths');
+const {getCleanSourceForIntroBody}=require('./cleanSourceForLength');
 const {buildOutput}=require('./outputBuilder');
 const {buildInstructions,buildInput}=require('../llm/promptBuilder');
 const {generateStructured}=require('../llm/openaiClient');
@@ -51,15 +51,14 @@ async function processDocument({inputPath,outputPath,apiKey,maxSeconds}){
 
     if(!timeLeftOk()) return {ok:false,errorCode:'E005',techHelp:true,signals:[{code:'E005',message:'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.'}]};
 
-        const enforced = enforceMaxLengths(llm.data);
-
-    const {errors,warnings}=runValidators({sourceCharCount:ex.charCount,llmData:enforced,detectorResult:detector,contactInfo:contact});
+    const clean = getCleanSourceForIntroBody(ex.rawText);
+    const {errors,warnings}=runValidators({sourceCharCount:clean.charCount,llmData:llm.data,detectorResult:detector,contactInfo:contact});
     if(errors.length>0){
       safeLog(`error_code:${errors[0].code}`);
       return {ok:false,errorCode:errors[0].code,techHelp:errors[0].code==='E005'||errors[0].code==='W010',signals:errors};
     }
 
-        const out=buildOutput({llmData:enforced,signals:warnings,contactLines:contact.found?contact.lines:[]});
+    const out=buildOutput({llmData:llm.data,signals:warnings,contactLines:contact.found?contact.lines:[]});
     await fs.writeFile(outputPath,out,'utf-8');
     return {ok:true,signals:warnings};
   }catch(_){
