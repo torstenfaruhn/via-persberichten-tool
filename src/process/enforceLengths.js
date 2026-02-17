@@ -1,5 +1,8 @@
 'use strict';
 
+const MAX_TITLE_CHARS = Number(process.env.MAX_TITLE_CHARS ?? 150);
+const MAX_INTRO_BODY_CHARS = Number(process.env.MAX_INTRO_BODY_CHARS ?? 2200);
+
 /**
  * Word-telling (tekens incl. spaties):
  * - vervangt regeleinden door spaties
@@ -34,27 +37,27 @@ function truncateAtWordBoundary(text, max){
 /**
  * Past maxima toe:
  * - kop <= 150 tekens (Word-telling)
- * - intro + body <= 1950 tekens (Word-telling)
+ * - intro + body <= MAX_INTRO_BODY_CHARS tekens (Word-telling)
  * De tool probeert eerst body te korten; intro blijft zo veel mogelijk intact.
  */
 function enforceMaxLengths(llmData){
   const d = Object.assign({}, llmData || {});
-  d.title = truncateAtWordBoundary(d.title || '', 150);
+  d.title = truncateAtWordBoundary(d.title || '', MAX_TITLE_CHARS);
 
   const intro = normalize(d.intro || '');
   let body = normalize(d.body || '');
 
   const total = cc(intro) + cc(body);
-  if(total <= 1950){
+  if(total <= MAX_INTRO_BODY_CHARS){
     d.intro = intro;
     d.body = body;
     return d;
   }
 
   // Eerst body inkorten zodat intro volledig kan blijven staan.
-  const maxBody = Math.max(0, 1950 - cc(intro));
+  const maxBody = Math.max(0, MAX_INTRO_BODY_CHARS - cc(intro));
   if(maxBody === 0){
-    d.intro = truncateAtWordBoundary(intro, 1950);
+    d.intro = truncateAtWordBoundary(intro, MAX_INTRO_BODY_CHARS);
     d.body = '';
     return d;
   }
