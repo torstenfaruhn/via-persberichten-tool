@@ -19,13 +19,18 @@
     el.snackbar.setAttribute("aria-hidden", isOpen ? "false" : "true");
   }
 
-  function setSignals(signals, showTechHelp) {
+  function setSignals(signals, showTechHelp, traceId) {
     el.signalsList.innerHTML = "";
     (signals || []).forEach((s) => {
       const li = document.createElement("li");
       li.textContent = `${s.code}: ${s.message}`;
       el.signalsList.appendChild(li);
     });
+    if (showTechHelp && traceId) {
+      const li = document.createElement("li");
+      li.textContent = `TraceId: ${traceId}`;
+      el.signalsList.appendChild(li);
+    }
     el.techHelp.hidden = !showTechHelp;
   }
 
@@ -125,7 +130,7 @@
     if (!f) return;
 
     el.fileMeta.textContent = `Gekozen bestand: ${f.name} (${Math.round(f.size / 1024)} KB)`;
-    setSignals([], false);
+    setSignals([], false, null);
 
     const form = new FormData();
     form.append("file", f);
@@ -134,13 +139,13 @@
     const { ok, json } = await postForm("/api/upload", form, { "X-API-Key": apiKey });
 
     if (!ok || !json) {
-      setSignals([{ code: "W010", message: "Technisch probleem tijdens upload. Probeer een ander bestand of herlaad de pagina." }], true);
+      setSignals([{ code: "W010", message: "Technisch probleem tijdens upload. Probeer een ander bestand of herlaad de pagina." }], true, null);
       setState("error");
       return;
     }
 
     if (json.status === "error") {
-      setSignals(json.signals || [], json.techHelp === true);
+      setSignals(json.signals || [], json.techHelp === true, json.traceId || null);
       if (json.auditLogUrl) window.location.href = json.auditLogUrl;
       setState("error");
       return;
@@ -158,19 +163,19 @@
     const { ok, json } = await postJson("/api/process", { jobId }, { "X-API-Key": apiKey });
 
     if (!ok || !json) {
-      setSignals([{ code: "W010", message: "Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw." }], true);
+      setSignals([{ code: "W010", message: "Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw." }], true, null);
       setState("error");
       return;
     }
 
     if (json.status === "error") {
-      setSignals(json.signals || [], json.techHelp === true);
+      setSignals(json.signals || [], json.techHelp === true, json.traceId || null);
       if (json.auditLogUrl) window.location.href = json.auditLogUrl;
       setState("error");
       return;
     }
 
-    setSignals(json.signals || [], false);
+    setSignals(json.signals || [], false, null);
     setState("done");
   });
 
