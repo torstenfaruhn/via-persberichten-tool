@@ -1,6 +1,6 @@
 'use strict';
 const OpenAI=require('openai');
-const {LLM_SCHEMA}=require('./schema');
+const { safeLog } = require('../security/safeLog');
 
 function extractJsonText(resp){
   if(!resp) return null;
@@ -41,7 +41,10 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
 
     return {ok:false, ...classifyOpenAIError({})};
   }catch(err){
-    return {ok:false, ...classifyOpenAIError(err)};
+   const status = Number(err?.status || err?.response?.status || 0);
+   safeLog(`openai_status:${status}`);
+   safeLog(`openai_errname:${String(err?.name || 'unknown').slice(0,60)}`);
+   return { ok:false, ...classifyOpenAIError(err) };
   }
 }
 
