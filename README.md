@@ -50,3 +50,18 @@ De server leest het stijlboek in (TXT/MD/DOCX/PDF), zet het om naar platte tekst
 
 - Maximaal 100.000 tekens worden meegestuurd (daarna afkappen).
 - Als het stijlboek ontbreekt of niet leesbaar is: **stil doorgaan** zonder stijlboek (geen UI-melding; alleen technische foutcode in serverlog).
+## Lengte-instellingen (80/20)
+
+De tool gebruikt standaard ruimere lengte-eisen zodat je vaker output krijgt. Je kunt dit aanpassen met environment variables (bijv. in Render).
+
+**Maxima (automatisch inkorten)**
+- `MAX_TITLE_CHARS` (default: `150`)
+- `MAX_INTRO_BODY_CHARS` (default: `2200`)
+
+**Minima**
+- `ABS_MIN_SOURCE_CHARS` (default: `950`) -> onder deze grens stopt de tool met `E004`
+- `SOFT_MIN_SOURCE_CHARS` (default: `1200`) -> onder deze grens geeft de tool een waarschuwing `W016`, maar levert wél output
+- `ABS_MIN_OUTPUT_CHARS` (default: `1100`) -> onder deze grens stopt de tool met `E004`
+- `SOFT_MIN_OUTPUT_CHARS` (default: `1400`) -> onder deze grens geeft de tool een waarschuwing `W017`, maar levert wél output
+
+Let op: hogere minima geven vaak betere kwaliteit, maar leveren minder output-documenten op.
