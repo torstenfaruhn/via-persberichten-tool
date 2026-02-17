@@ -7,7 +7,7 @@ const fsp = require('fs/promises');
 const os = require('os');
 const multer = require('multer');
 const { v4: uuidv4 } = require('uuid');
-const { safeLog } = require('./src/security/safeLog');
+const { safeLog, safeLogError } = require('./src/security/safeLog');
 
 const { processDocument } = require('./src/process/processDocument');
 
@@ -174,20 +174,17 @@ app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) =
 
     safeLog('job_status:uploaded');
     return res.status(200).json({ status: 'ok', jobId });
-} catch (err) {
-  job.status = 'error';
-  const traceId = `t_${jobId}_${Date.now()}`;
-  safeLogError(err, { at: 'api/process', code: 'W010', traceId });
-
-  return res.status(500).json({
-    status: 'error',
-    signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }],
-    techHelp: true,
-    auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`,
-    traceId
-  });
-}
-
+  } catch (err) {
+    const traceId = `t_upload_${Date.now()}`;
+    safeLogError(err, { at: 'api/upload', code: 'W010', traceId });
+    return res.status(500).json({
+      status: 'error',
+      signals: [{ code: 'W010', message: 'Technisch probleem tijdens upload. Probeer het opnieuw.' }],
+      techHelp: true,
+      auditLogUrl: null,
+      traceId
+    });
+  }
 });
 
 app.post('/api/process', requireApiKey, async (req, res) => {
@@ -202,6 +199,7 @@ app.post('/api/process', requireApiKey, async (req, res) => {
       auditLogUrl: null
     });
   }
+  const traceId = `t_${jobId || 'nojob'}_${Date.now()}`;
 
   try {
     job.status = 'processing';
@@ -211,19 +209,21 @@ app.post('/api/process', requireApiKey, async (req, res) => {
       inputPath: job.inputPath,
       outputPath: job.outputPath,
       apiKey: req.apiKey,
-      maxSeconds: 360
+      maxSeconds: 360,
+      traceId
     });
 
     if (!result || result.ok !== true) {
       const errorCode = result?.errorCode || 'W010';
       job.status = 'error';
-      safeLog(`error_code:${errorCode}`);
+      safeLog(`error_code:${errorCode} traceId=${traceId}`);
 
       return res.status(400).json({
         status: 'error',
         signals: result?.signals || [{ code: errorCode, message: 'Verwerking mislukt. Probeer het opnieuw.' }],
         techHelp: Boolean(result?.techHelp),
-        auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=${encodeURIComponent(errorCode)}`
+        auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=${encodeURIComponent(errorCode)}`,
+        traceId
       });
     }
 
@@ -234,18 +234,18 @@ app.post('/api/process', requireApiKey, async (req, res) => {
       status: 'ok',
       signals: result.signals || []
     });
-  } catch (_) {
+  } catch (err) {
     job.status = 'error';
-    safeLog('error_code:W010');
+    safeLogError(err, { at: 'api/process', code: 'W010', traceId });
     return res.status(500).json({
       status: 'error',
       signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }],
       techHelp: true,
-      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`
+      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`,
+      traceId
     });
   }
 });
-
 app.get('/api/download', requireApiKey, async (req, res) => {
   const jobId = (req.query.jobId || '').toString();
   const job = jobs.get(jobId);
@@ -274,13 +274,15 @@ app.get('/api/download', requireApiKey, async (req, res) => {
     stream.on('error', async () => {
       await cleanupJob(jobId);
     });
-  } catch (_) {
-    safeLog('error_code:W010');
+  } catch (err) {
+    const traceId = `t_download_${jobId || 'nojob'}_${Date.now()}`;
+    safeLogError(err, { at: 'api/download', code: 'W010', traceId });
     return res.status(500).json({
       status: 'error',
       signals: [{ code: 'W010', message: 'Technisch probleem bij downloaden. Probeer het opnieuw.' }],
       techHelp: true,
-      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`
+      auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`,
+      traceId
     });
   }
 });
