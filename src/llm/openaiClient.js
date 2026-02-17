@@ -23,7 +23,7 @@ async function callLLM({apiKey,instructions,input,model}){
     instructions,
     input,
     store:false,
-    text:{format:{type:'json_schema',json_schema:{name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}}
+    text:{format:{type:'json_schema',name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}
   });
   return extractJsonText(resp);
 }
@@ -46,7 +46,8 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
       status: Number(err?.status || err?.response?.status || 0) || null,
       name: err?.name || null,
       errCode: err?.code || null,
-      type: err?.type || null
+      type: err?.type || null,
+      param: err?.param || err?.error?.param || null
     };
     safeLog(`openai_error_meta:${JSON.stringify(info)}`);
     return { ok: false, ...classifyOpenAIError(err) };
