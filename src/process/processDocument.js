@@ -61,9 +61,14 @@ async function processDocument({inputPath,outputPath,apiKey,maxSeconds}){
     const out=buildOutput({llmData:llm.data,signals:warnings,contactLines:contact.found?contact.lines:[]});
     await fs.writeFile(outputPath,out,'utf-8');
     return {ok:true,signals:warnings};
-  }catch(_){
-    safeLog('error_code:W010');
-    return {ok:false,errorCode:'W010',techHelp:true,signals:[{code:'W010',message:'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.'}]};
-  }
+} catch (err) {
+  safeLogError(err, { at: 'processDocument', code: 'W010' });
+  return {
+    ok: false,
+    errorCode: 'W010',
+    techHelp: true,
+    signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }]
+  };
 }
+
 module.exports={processDocument};
