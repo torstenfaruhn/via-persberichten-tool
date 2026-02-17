@@ -1,6 +1,7 @@
 'use strict';
 const OpenAI=require('openai');
-const { safeLog } = require('../security/safeLog');
+const {LLM_SCHEMA}=require('./schema');
+const {safeLog}=require('../security/safeLog');
 
 function extractJsonText(resp){
   if(!resp) return null;
@@ -39,12 +40,16 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
       if(p2.ok) return {ok:true,data:p2.data};
     }
 
-    return {ok:false, ...classifyOpenAIError({})};
+    safeLog('openai_parse_fail:1');
+    return {ok:false, ...classifyOpenAIError({status:0,name:'PARSE_FAIL'})};
   }catch(err){
-   const status = Number(err?.status || err?.response?.status || 0);
-   safeLog(`openai_status:${status}`);
-   safeLog(`openai_errname:${String(err?.name || 'unknown').slice(0,60)}`);
-   return { ok:false, ...classifyOpenAIError(err) };
+    const status = Number(err?.status || err?.response?.status || 0);
+    const name = String(err?.name || 'unknown').slice(0,60);
+    const code = String(err?.code || '').slice(0,60);
+    if(status) safeLog(`openai_status:${status}`);
+    safeLog(`openai_errname:${name}`);
+    if(code) safeLog(`openai_errcode:${code}`);
+    return {ok:false, ...classifyOpenAIError(err)};
   }
 }
 
@@ -52,6 +57,38 @@ module.exports={generateStructured};
 
 function classifyOpenAIError(err){
   const status = Number(err?.status || err?.response?.status || 0);
+  const name = String(err?.name || '');
+
+  // LLM output kon niet als JSON worden gelezen
+  if(!status && name === 'PARSE_FAIL'){
+    return {
+      errorCode: 'E406',
+      techHelp: true,
+      signals: [{ code:'E406', message:'AI-antwoord is niet leesbaar als JSON. Probeer het opnieuw.' }]
+    };
+  }
+
+  if(status === 400){
+    return {
+      errorCode: 'E400',
+      techHelp: true,
+      signals: [{ code:'E400', message:'AI-verzoek ongeldig (400). Controleer model/parameters en deploy opnieuw.' }]
+    };
+  }
+  if(status === 403){
+    return {
+      errorCode: 'E403',
+      techHelp: false,
+      signals: [{ code:'E403', message:'AI weigert toegang (403). Controleer rechten van de API-key.' }]
+    };
+  }
+  if(status >= 500 && status <= 599){
+    return {
+      errorCode: 'E500',
+      techHelp: true,
+      signals: [{ code:'E500', message:'AI-service heeft een storing (5xx). Probeer later opnieuw.' }]
+    };
+  }
 
   if(status === 401){
     return {
