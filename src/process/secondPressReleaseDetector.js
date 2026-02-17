@@ -27,7 +27,8 @@ function detectSecondPressRelease(raw){
   if(/(contact|pers|media|\bwww\.|@|\+31|\b06\b)/i.test(second)){score+=1;triggers.push('contact');}
   if(second){score+=1;triggers.push('separator');}
   let decision='none';
-  if(score>=4&&secondLen>=900) decision='error';
+  const hasStrongPressReleaseCue = triggers.includes('dateline') || triggers.includes('title');
+  if(score>=4&&secondLen>=900&&hasStrongPressReleaseCue) decision='error';
   else if(score>=2) decision='warn';
   return {score,triggers,secondSectionCharCount:secondLen,decision};
 }
