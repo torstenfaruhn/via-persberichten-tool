@@ -1,10 +1,9 @@
 'use strict';
-function cc(s){return String(s||'').replace(/\r\n|\n|\r/g,' ').replace(/\s+/g,' ').trim().length;}
+const {cc}=require('../process/enforceLengths');
 function lengthWarnings({intro,body}){
   const total=cc(intro)+cc(body);
-  const inXS=total>=950&&total<=1150;
-  const inS=total>=1750&&total<=1950;
-  if(inXS||inS) return [];
-  return [{code:'W007',message:'Lengte buiten de afgesproken bandbreedte. Controleer of dit oké is.'}];
+  // Ondergrens is hard (E004), dus hier alleen nog soft als het te lang blijft.
+  if(total<=1950) return [];
+  return [{code:'W007',message:'Nieuwsbericht te lang: eindredacteur moet inkorten.'}];
 }
 module.exports={lengthWarnings};
