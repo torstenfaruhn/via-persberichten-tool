@@ -1,13 +1,8 @@
 'use strict';
-const {cc}=require('../process/enforceLengths');
-
-const MAX_INTRO_BODY_CHARS = Number(process.env.MAX_INTRO_BODY_CHARS ?? 2200);
-
+function cc(s){return String(s||'').replace(/\r\n|\n|\r/g,' ').replace(/\s+/g,' ').trim().length;}
 function lengthWarnings({intro,body}){
   const total=cc(intro)+cc(body);
-  // Ondergrens wordt elders afgehandeld (E004 of waarschuwing).
-  // Hier alleen nog soft als het (ondanks inkorten) te lang blijft.
-  if(total<=MAX_INTRO_BODY_CHARS) return [];
-  return [{code:'W007',message:'Nieuwsbericht te lang: eindredacteur moet inkorten.'}];
+  if(total<=2150) return [];
+  return [{code:'W007',message:'Intro+body is langer dan 2150 tekens. Eindredacteur moet inkorten.'}];
 }
 module.exports={lengthWarnings};
