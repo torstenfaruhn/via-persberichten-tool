@@ -11,3 +11,5 @@ services:
         value: "10"
       - key: OPENAI_MODEL
         value: "gpt-4o-mini"
+      - key: STYLEBOOK_PATH
+        value: "stylebook/stylebook-extract.md"

@@ -41,6 +41,12 @@ Een eenvoudige webtool (1 pagina) om een persbericht (.txt/.docx/.pdf) te upload
 ## Render variabelen
 - `MAX_UPLOAD_MB` (default 10)
 - `OPENAI_MODEL` (default gpt-4o-mini)
+- `STYLEBOOK_PATH` (default: stylebook/stylebook-extract.md)
 
-## Opmerking over stijlboek
-De repo bevat geen stijlboek-tekst. Als je de tekst wél wil meegeven aan de LLM, voeg een eigen tekstbestand toe en laad het in `processDocument.js`.
+## Stijlboek (leidend)
+De map `stylebook/` bevat de stijlboekbronnen. De tool gebruikt in productie **alleen** `stylebook/stylebook-extract.md` via `STYLEBOOK_PATH`.
+
+De server leest het stijlboek in (TXT/MD/DOCX/PDF), zet het om naar platte tekst en voegt dit toe aan de LLM-instructies via `buildInstructions({ stylebookText })`.
+
+- Maximaal 100.000 tekens worden meegestuurd (daarna afkappen).
+- Als het stijlboek ontbreekt of niet leesbaar is: **stil doorgaan** zonder stijlboek (geen UI-melding; alleen technische foutcode in serverlog).
