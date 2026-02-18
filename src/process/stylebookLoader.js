@@ -34,24 +34,28 @@ async function readOne(filePath) {
 }
 
 async function resolveDefaultPaths() {
+  // Hardening: if an extract exists, prefer it as single source of truth.
+  const extract = path.join(process.cwd(), 'stylebook', 'stylebook-extract.md');
+  try {
+    await fs.access(extract);
+    return [extract];
+  } catch (_) {
+    // ignore
+  }
+
   const dir = path.join(process.cwd(), 'stylebook');
   try {
     const entries = await fs.readdir(dir, { withFileTypes: true });
     return entries
       .filter(e => e.isFile())
       .map(e => path.join(dir, e.name))
+      .filter(p => !path.basename(p).startsWith('ZZ_naslag_'))
       .filter(p => ['.txt', '.md', '.docx', '.pdf'].includes(ext(p)));
   } catch (_) {
     return [];
   }
 }
 
-function splitPaths(s) {
-  return (s || '')
-    .split(',')
-    .map(x => x.trim())
-    .filter(Boolean);
-}
 
 function truncate(text, maxChars) {
   if (!text) return '';
@@ -60,9 +64,8 @@ function truncate(text, maxChars) {
 }
 
 async function loadStylebookText({ maxChars = 100000 } = {}) {
-  const envPaths = splitPaths(process.env.STYLEBOOK_PATHS || '');
   const single = (process.env.STYLEBOOK_PATH || '').trim();
-  const paths = envPaths.length > 0 ? envPaths : (single ? [single] : await resolveDefaultPaths());
+  const paths = single ? [single] : await resolveDefaultPaths();
 
   if (!paths || paths.length === 0) return '';
 

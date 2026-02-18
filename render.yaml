@@ -11,5 +11,5 @@ services:
         value: "10"
       - key: OPENAI_MODEL
         value: "gpt-4o-mini"
-      - key: STYLEBOOK_PATHS
-        value: "stylebook/Stijlboek en typografie De Limburger.docx,stylebook/DL-Stijlboek-Afspraken.pdf,stylebook/DL-Stijlboek-Veelgemaakte-fouten.pdf"
+      - key: STYLEBOOK_PATH
+        value: "stylebook/stylebook-extract.md"
