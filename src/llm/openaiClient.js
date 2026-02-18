@@ -16,7 +16,9 @@ function extractJsonText(resp){
 }
 function safeParse(txt){try{return {ok:true,data:JSON.parse(txt)};}catch(_){return {ok:false};}}
 async function callLLM({apiKey,instructions,input,model}){
-  const client=new OpenAI({apiKey});
+  const timeoutMs = Number(process.env.OPENAI_TIMEOUT_MS || 60000);
+  const maxRetries = Number(process.env.OPENAI_MAX_RETRIES || 2);
+  const client=new OpenAI({apiKey, timeout: timeoutMs, maxRetries});
   const resp=await client.responses.create({
     model: model || 'gpt-4o-mini',
     instructions,
