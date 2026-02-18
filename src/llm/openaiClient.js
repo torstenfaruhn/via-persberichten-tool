@@ -1,5 +1,6 @@
 'use strict';
-const OpenAI=require('openai');
+const OpenAIModule = require('openai');
+const OpenAI = OpenAIModule.default || OpenAIModule;
 const {LLM_SCHEMA}=require('./schema');
 
 function extractJsonText(resp){
