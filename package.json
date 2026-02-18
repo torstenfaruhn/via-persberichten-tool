@@ -4,7 +4,7 @@
   "private": true,
   "type": "commonjs",
   "engines": {
-    "node": ">=18"
+    "node": "20.x"
   },
   "scripts": {
     "start": "node server.js"
@@ -15,6 +15,6 @@
     "uuid": "^9.0.1",
     "mammoth": "^1.7.1",
     "pdf-parse": "^1.1.1",
-    "openai": "^4.0.0"
+    "openai": "4.0.0"
   }
 }
