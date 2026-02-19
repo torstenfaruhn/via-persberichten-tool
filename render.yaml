@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: via-persberichten-tool
+    env: node
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MAX_UPLOAD_MB
+        value: "10"
+      - key: OPENAI_MODEL
+        value: "gpt-4o-mini"
