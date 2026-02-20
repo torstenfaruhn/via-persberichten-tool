@@ -99,8 +99,35 @@ async function callLLM({apiKey,instructions,input,model}){
   return extractChatJsonText(resp);
 }
 
+async function callLLMPlain({apiKey,instructions,input,model}){
+  const client=new OpenAI({apiKey});
+  const m=model || 'gpt-4o-mini';
+
+  // Gebruik Chat Completions zonder response_format (max compatibiliteit).
+  const resp=await client.chat.completions.create({
+    model: m,
+    messages:[
+      {role:'system',content:instructions},
+      {role:'user',content:input}
+    ]
+  });
+  return extractChatJsonText(resp);
+}
+
+
 async function generateStructured({apiKey,instructions,input,model,retryOnce}){
   try{
+    // Guard: voorkom te grote requests (snel en voorspelbaar)
+    const maxChars = Number(process.env.MAX_LLM_CHARS || 120000);
+    const approxChars = String(instructions||'').length + String(input||'').length;
+    if(Number.isFinite(maxChars) && maxChars > 0 && approxChars > maxChars){
+      return {
+        ok:false,
+        errorCode:'E413',
+        techHelp:false,
+        signals:[{code:'E413', message:`Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`}]
+      };
+    }
     const txt=await callLLM({apiKey,instructions,input,model});
     const p=safeParse(txt||'');
     if(p.ok) return {ok:true,data:p.data};
@@ -114,10 +141,52 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
 
     return {ok:false, errorCode:'EJSON', techHelp:true, signals:[{code:'EJSON', message:'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'}]};
   }catch(err){
-    return {ok:false, ...classifyOpenAIError(err)};
+    // Log alleen technische metadata (geen tekst/prompt)
+    logOpenAIError(err);
+
+    const classified = classifyOpenAIError(err);
+
+    // Compat fallback: als structured output 400 geeft, probeer nog 1x zonder response_format.
+    if(classified?.errorCode === 'E400' && retryOnce){
+      try{
+        const strictInstr = instructions + '
+
+BELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+        const txt2 = await callLLMPlain({apiKey,instructions:strictInstr,input,model});
+        const p2 = safeParse(txt2||'');
+        if(p2.ok) return {ok:true,data:p2.data};
+        return {
+          ok:false,
+          errorCode:'EJSON',
+          techHelp:true,
+          signals:[{code:'EJSON', message:'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'}]
+        };
+      }catch(err2){
+        logOpenAIError(err2);
+        return {ok:false, ...classifyOpenAIError(err2)};
+      }
+    }
+
+    return {ok:false, ...classified};
   }
 }
 
+
+function safe(v){ return (v===undefined||v===null) ? '' : String(v); }
+
+function getErrMeta(err){
+  const status = getStatus(err);
+  const type = err?.error?.type || err?.type || err?.name || '';
+  const code = err?.code || err?.cause?.code || err?.error?.code || '';
+  const param = err?.error?.param || err?.param || '';
+  return {status, type, code, param};
+}
+
+function logOpenAIError(err){
+  const {status,type,code,param} = getErrMeta(err);
+  // Alleen technische logging: status/type/code/param
+  console.log(`openai_error:status=${safe(status)||'na'} type=${safe(type)} code=${safe(code)} param=${safe(param)}`);
+}
 module.exports={generateStructured};
 
 function classifyOpenAIError(err){
