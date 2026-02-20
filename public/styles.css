@@ -301,6 +301,17 @@ html[data-theme="dark"] .input {
   color: var(--text);
   box-shadow: var(--shadow);
 }
+.snackbar--progress {
+  background: #f59e0b; /* oranje */
+  border-color: rgba(245, 158, 11, 0.55);
+  color: #111827;
+}
+
+.snackbar--success {
+  background: #22c55e; /* groen */
+  border-color: rgba(34, 197, 94, 0.55);
+  color: #052e16;
+}
 
 /* Footer */
 .footer {
