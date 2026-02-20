@@ -2,6 +2,10 @@
 * { box-sizing: border-box; }
 
 :root {
+  /* Layout */
+  --wrap: 980px;
+  --gutter: 16px;
+
   /* Light theme (default) */
   --bg: #f6f7fb;
   --panel: #ffffff;
@@ -65,13 +69,14 @@ a { color: inherit; }
   z-index: 10;
 }
 
-/* Shared layout width (matches .container + header inner) */
+/* Container: exact dezelfde wrap+gutter als header */
 .container {
-  width: min(980px, calc(100% - 32px));
+  max-width: var(--wrap);
   margin: 18px auto 40px auto;
+  padding: 0 var(--gutter);
 }
 
-/* Header (full-width background, inner content aligned to container width) */
+/* Header: full-width background, but inner aligns to container */
 .header {
   border-bottom: 1px solid var(--border);
   background: var(--panelGlass);
@@ -79,14 +84,14 @@ a { color: inherit; }
 }
 
 .header__inner {
-  width: min(980px, calc(100% - 32px));
+  max-width: var(--wrap);
   margin: 0 auto;
+  padding: 14px var(--gutter); /* <-- cruciaal: dezelfde gutter als cards */
 
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
   gap: 12px;
-  padding: 14px 0;
 }
 
 .header__left,
@@ -108,7 +113,7 @@ a { color: inherit; }
 
 .header__title {
   margin: 0;
-  font-size: 30px; /* groter, in verhouding met logo */
+  font-size: 30px;
   letter-spacing: 0.2px;
   text-align: center;
   font-weight: 750;
@@ -129,13 +134,8 @@ a { color: inherit; }
   transition: transform 120ms ease, background 120ms ease;
 }
 
-.icon-btn:hover {
-  background: rgba(127, 127, 127, 0.10);
-}
-
-.icon-btn:active {
-  transform: translateY(1px);
-}
+.icon-btn:hover { background: rgba(127, 127, 127, 0.10); }
+.icon-btn:active { transform: translateY(1px); }
 
 .icon-btn__text {
   font-weight: 650;
@@ -203,15 +203,11 @@ html[data-theme="dark"] .input {
 }
 
 /* Centered panel variant (API-key card) */
-.panel--center {
-  text-align: center;
-}
+.panel--center { text-align: center; }
 
 .panel--center .label,
 .panel--center .help,
-.panel--center .error {
-  text-align: center;
-}
+.panel--center .error { text-align: center; }
 
 .input--narrow {
   max-width: 560px;
@@ -227,9 +223,7 @@ html[data-theme="dark"] .input {
   align-items: center;
 }
 
-.actions--center {
-  justify-content: center;
-}
+.actions--center { justify-content: center; }
 
 .btn {
   appearance: none;
@@ -333,15 +327,11 @@ html[data-theme="dark"] .footer {
     grid-template-columns: 1fr;
     justify-items: center;
     text-align: center;
-    padding: 12px 0;
+    padding: 12px var(--gutter);
   }
 
   .header__left,
-  .header__right {
-    justify-content: center;
-  }
+  .header__right { justify-content: center; }
 
-  .header__title {
-    font-size: 26px;
-  }
+  .header__title { font-size: 26px; }
 }
