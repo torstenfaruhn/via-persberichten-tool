@@ -32,15 +32,13 @@ function normalizeJsonCandidate(txt){
   if(!s) return s;
 
   // Strip markdown code fences
-  if(s.startsWith('```')){
-    const lines = s.split(/?
-/);
+  if (s.startsWith('```')) {
+    const lines = s.split(/\r?\n/);
     // remove first fence line
     lines.shift();
     // remove last fence line if present
-    if(lines.length && lines[lines.length-1].trim().startsWith('```')) lines.pop();
-    s = lines.join('
-').trim();
+    if (lines.length && lines[lines.length - 1].trim().startsWith('```')) lines.pop();
+    s = lines.join('\n').trim();
   }
 
   // If there's extra text around JSON, take the outermost object/array
