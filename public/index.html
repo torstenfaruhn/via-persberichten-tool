@@ -8,48 +8,59 @@
   </head>
   <body>
     <a class="skiplink" href="#main">Ga naar inhoud</a>
+
     <header class="header">
       <div class="header__left">
-        <img src="/assets/Logo-VIA-De-Limburger.png" alt="Logo VIA De Limburger" class="header__logo" />
+        <img
+          src="/assets/Logo-VIA-De-Limburger.png"
+          alt="Logo VIA De Limburger"
+          class="header__logo"
+        />
       </div>
+
       <div class="header__center">
         <h1 class="header__title">VIA Persberichten-tool</h1>
       </div>
+
       <div class="header__right" aria-hidden="true"></div>
     </header>
 
     <main id="main" class="container">
       <section class="intro" aria-label="Uitleg">
-        <p>
-          Dit is de persberichten-tool voor hyperlokale persberichten. Deze worden met behulp van AI
-          herschreven, en vervolgens als concepttekst-download aangeboden. Het is de
-          verantwoordelijkheid van de (eind)redacteur om de tekst conform de journalistieke afspraken
-          van De Limburger te verwerken. Klik op de knoppen hieronder om een persbericht te uploaden,
-          bewerken en het resultaat te downloaden. In het venster onderin worden meldingen getoond
-          met betrekking tot fouten, conflicten of ontbrekende gegevens die tijdens de verwerking
-          worden gedetecteerd.
+        <p class="intro__text">
+          Dit is de persberichten-tool voor hyperlokale persberichten. Geüploade persberichten worden met behulp van AI herschreven, en vervolgens als concepttekst-download aangeboden. Het is de verantwoordelijkheid van de (eind)redacteur om de tekst conform de journalistieke afspraken
+          van De Limburger te verwerken.
+          Klik op de knoppen hieronder om een persbericht te uploaden, bewerken en het resultaat te downloaden.
+          In het venster onderin worden meldingen getoond met betrekking tot fouten, conflicten of ontbrekende gegevens die tijdens de verwerking worden gedetecteerd.
         </p>
       </section>
 
       <section class="panel" aria-label="Stap 1 API-key">
         <label class="label" for="apiKey">API-key</label>
-        <input id="apiKey" class="input" type="password" inputmode="text" autocomplete="off"
-          placeholder="Voer hier je API-key in en druk op Enter" />
-        <p class="help">Zonder API-key kun je niet verder.</p>
+        <input
+          id="apiKey"
+          class="input"
+          type="password"
+          inputmode="text"
+          autocomplete="off"
+          placeholder="Voer hier je API-key in en druk op Enter"
+        />
+        <p class="help">Zonder API-key kun je niet verder. Voer hierboven de API-key in en druk op Enter.</p>
         <p class="error" id="apiKeyError" role="status" aria-live="polite"></p>
       </section>
 
       <section class="panel" aria-label="Acties">
-        <div class="actions">
+        <div class="actions actions--center">
           <input id="fileInput" type="file" accept=".txt,.docx,.pdf" hidden />
           <button id="btnUpload" class="btn" type="button" disabled>Persbericht uploaden</button>
           <button id="btnProcess" class="btn" type="button" disabled>Document bewerken</button>
-          <button id="btnDownload" class="btn" type="button" disabled>Nieuwsbericht downloaden</button>
+          <button id="btnDownload" class="btn" type="button" disabled>Concept-nieuwsbericht downloaden</button>
         </div>
-        <div class="meta" id="fileMeta" aria-live="polite"></div>
+
+        <div class="meta meta--center" id="fileMeta" aria-live="polite"></div>
       </section>
 
-      <section class="panel signals" aria-label="Signalen">
+      <section class="panel signals signals--center" aria-label="Signalen">
         <h2 class="signals__title">SIGNALEN</h2>
         <ul class="signals__list" id="signalsList"></ul>
         <div class="signals__tech" id="techHelp" hidden>
@@ -60,11 +71,13 @@
 
     <div id="snackbar" class="snackbar" role="status" aria-live="polite" aria-hidden="true">Bezig…</div>
 
-    <footer class="footer">
-      © 2026 MHLI/DL. Let op: AI-gegenereerde tekst. De uitvoer van deze tool concepttekst. De inhoud
-      is bedoeld als hulpmiddel voor redactionele bewerking. De output is geen medisch, juridisch,
-      financieel of ander professioneel advies. De redactie blijft zelf verantwoordelijk voor
-      fact-checking en eindredactie.
+    <footer class="footer footer--center">
+      <div class="footer__inner">
+        © 2026 MHLI/DL. Let op: AI-gegenereerde tekst. De uitvoer van deze tool concepttekst. De inhoud
+        is bedoeld als hulpmiddel voor redactionele bewerking. De output is geen medisch, juridisch,
+        financieel of ander professioneel advies. De redactie blijft zelf verantwoordelijk voor
+        fact-checking en eindredactie.
+      </div>
     </footer>
 
     <script src="/app.js"></script>
