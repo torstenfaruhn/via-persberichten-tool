@@ -1,6 +1,7 @@
 (() => {
   let apiKey = null;
   let jobId = null;
+  let lastSelectedFilename = null; // voor fallback
 
   const el = {
     apiKey: document.getElementById("apiKey"),
@@ -101,6 +102,39 @@
     return { ok: res.ok, json };
   }
 
+  function buildFallbackOutputName(selectedFilename) {
+    // Default: text/plain
+    const defaultName = "document_bewerkt.txt";
+    if (!selectedFilename) return defaultName;
+
+    // Strip padjes (voor de zekerheid) en extensie
+    const justName = String(selectedFilename).split(/[\\/]/).pop() || "";
+    const base = justName.replace(/\.[^.]+$/, "") || "document";
+    return `${base}_bewerkt.txt`;
+  }
+
+  function parseContentDispositionFilename(dispo) {
+    // Ondersteun filename*=UTF-8''... en filename="..."
+    // Retourneert null als er niks bruikbaars is.
+    const d = String(dispo || "");
+
+    // 1) filename*=
+    const mStar = d.match(/filename\*\s*=\s*UTF-8''([^;\n]+)/i);
+    if (mStar && mStar[1]) {
+      try {
+        return decodeURIComponent(mStar[1].trim().replace(/"/g, ""));
+      } catch (_) {
+        return mStar[1].trim().replace(/"/g, "");
+      }
+    }
+
+    // 2) filename=
+    const m = d.match(/filename\s*=\s*"([^"]+)"/i) || d.match(/filename\s*=\s*([^;\n]+)/i);
+    if (m && m[1]) return m[1].trim().replace(/"/g, "");
+
+    return null;
+  }
+
   el.apiKey.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const val = (el.apiKey.value || "").trim();
@@ -123,6 +157,8 @@
     if (!requireKeyOrShowError()) return;
     const f = el.fileInput.files && el.fileInput.files[0];
     if (!f) return;
+
+    lastSelectedFilename = f.name;
 
     el.fileMeta.textContent = `Gekozen bestand: ${f.name} (${Math.round(f.size / 1024)} KB)`;
     setSignals([], false);
@@ -212,13 +248,10 @@
 
       const blob = await res.blob();
 
-      // Probeer bestandsnaam uit Content-Disposition te halen.
-      let filename = "persbericht.docx";
+      // Bestandsnaam: uit Content-Disposition, anders fallback naar text/plain
       const dispo = res.headers.get("content-disposition") || "";
-      const match = dispo.match(/filename\*?=(?:UTF-8''|")?([^;"\n]+)(?:")?/i);
-      if (match && match[1]) {
-        filename = decodeURIComponent(match[1]).replace(/"/g, "");
-      }
+      const fromHeader = parseContentDispositionFilename(dispo);
+      const filename = fromHeader || buildFallbackOutputName(lastSelectedFilename);
 
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
