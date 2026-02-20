@@ -14,18 +14,93 @@ function extractJsonText(resp){
   }
   return null;
 }
-function safeParse(txt){try{return {ok:true,data:JSON.parse(txt)};}catch(_){return {ok:false};}}
+function extractChatJsonText(resp){
+  const txt=resp?.choices?.[0]?.message?.content;
+  return (typeof txt==='string'&&txt.trim()) ? txt.trim() : null;
+}
+function safeParse(txt){
+  try{
+    const cleaned = normalizeJsonCandidate(txt);
+    return {ok:true,data:JSON.parse(cleaned)};
+  }catch(_){
+    return {ok:false};
+  }
+}
+
+function normalizeJsonCandidate(txt){
+  let s = (typeof txt==='string' ? txt : '').trim();
+  if(!s) return s;
+
+  // Strip markdown code fences
+  if(s.startsWith('```')){
+    const lines = s.split(/?
+/);
+    // remove first fence line
+    lines.shift();
+    // remove last fence line if present
+    if(lines.length && lines[lines.length-1].trim().startsWith('```')) lines.pop();
+    s = lines.join('
+').trim();
+  }
+
+  // If there's extra text around JSON, take the outermost object/array
+  const firstObj = s.indexOf('{');
+  const lastObj = s.lastIndexOf('}');
+  const firstArr = s.indexOf('[');
+  const lastArr = s.lastIndexOf(']');
+
+  // Prefer object if it looks valid
+  if(firstObj !== -1 && lastObj !== -1 && lastObj > firstObj){
+    return s.slice(firstObj, lastObj+1).trim();
+  }
+  if(firstArr !== -1 && lastArr !== -1 && lastArr > firstArr){
+    return s.slice(firstArr, lastArr+1).trim();
+  }
+  return s;
+}
+
+
+function isTypeError(err){return err instanceof TypeError || err?.name==='TypeError';}
+function getStatus(err){return Number(err?.status || err?.response?.status || err?.statusCode || 0);}
+
 async function callLLM({apiKey,instructions,input,model}){
   const client=new OpenAI({apiKey});
-  const resp=await client.responses.create({
-    model: model || 'gpt-4o-mini',
-    instructions,
-    input,
-    store:false,
-    text:{format:{type:'json_schema',json_schema:{name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}}
+  const m=model || 'gpt-4o-mini';
+
+  // Path A: Responses API (nieuw)
+  if(client?.responses && typeof client.responses.create==='function'){
+    try{
+      const resp=await client.responses.create({
+        model: m,
+        instructions,
+        input,
+        store:false,
+        text:{format:{type:'json_schema',json_schema:{name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}}
+      });
+      return extractJsonText(resp);
+    }catch(err){
+      // Als dit pad faalt door SDK/endpoint mismatch, probeer Chat Completions.
+      const status=getStatus(err);
+      if(isTypeError(err) || status===404){
+        // fallback hieronder
+      }else{
+        throw err;
+      }
+    }
+  }
+
+  // Path B: Chat Completions (ouder/breder compatibel)
+  const resp=await client.chat.completions.create({
+    model: m,
+    messages:[
+      {role:'system',content:instructions},
+      {role:'user',content:input}
+    ],
+    response_format:{ type:'json_object' }
   });
-  return extractJsonText(resp);
+  return extractChatJsonText(resp);
 }
+
 async function generateStructured({apiKey,instructions,input,model,retryOnce}){
   try{
     const txt=await callLLM({apiKey,instructions,input,model});
@@ -39,7 +114,7 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
       if(p2.ok) return {ok:true,data:p2.data};
     }
 
-    return {ok:false, ...classifyOpenAIError({})};
+    return {ok:false, errorCode:'EJSON', techHelp:true, signals:[{code:'EJSON', message:'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'}]};
   }catch(err){
     return {ok:false, ...classifyOpenAIError(err)};
   }
@@ -48,8 +123,47 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
 module.exports={generateStructured};
 
 function classifyOpenAIError(err){
-  const status = Number(err?.status || err?.response?.status || 0);
+  const status = getStatus(err);
+  const errCode = String(err?.code || err?.cause?.code || '');
 
+  // Netwerk/transport fouten (geen inhoud loggen)
+  const netCodes = new Set([
+    'ENOTFOUND','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ECONNREFUSED',
+    'UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET','UND_ERR_HEADERS_TIMEOUT'
+  ]);
+  if(netCodes.has(errCode)){
+    return {
+      errorCode: 'E503NET',
+      techHelp: true,
+      signals: [{ code:'E503NET', message:'Netwerkprobleem bij AI-koppeling. Probeer het opnieuw; als dit blijft: beheerder laten controleren.' }]
+    };
+  }
+
+  // OpenAI/Upstream 5xx
+  if(status >= 500){
+    return {
+      errorCode: 'E5XX',
+      techHelp: true,
+      signals: [{ code:'E5XX', message:'AI-dienst is tijdelijk niet beschikbaar (5xx). Probeer het later opnieuw.' }]
+    };
+  }
+
+  // SDK mismatch / programmeerfout (geen tekstdata loggen/tonen)
+  if(isTypeError(err)){
+    return {
+      errorCode: 'E400SDK',
+      techHelp: true,
+      signals: [{ code:'E400SDK', message:'Technische fout in AI-koppeling (SDK mismatch). Redeploy met vastgezette dependencies.' }]
+    };
+  }
+
+  if(status === 400){
+    return {
+      errorCode: 'E400',
+      techHelp: true,
+      signals: [{ code:'E400', message:'AI weigert de aanvraag (400). Mogelijk te lange invoer of ongeldig formaat. Probeer een korter document.' }]
+    };
+  }
   if(status === 401){
     return {
       errorCode: 'E401',
@@ -61,7 +175,7 @@ function classifyOpenAIError(err){
     return {
       errorCode: 'E404',
       techHelp: true,
-      signals: [{ code:'E404', message:'AI-model niet beschikbaar (404). Controleer het ingestelde model.' }]
+      signals: [{ code:'E404', message:'AI-model of endpoint niet beschikbaar (404). Controleer model en dependencies.' }]
     };
   }
   if(status === 429){
@@ -79,4 +193,3 @@ function classifyOpenAIError(err){
     signals: [{ code:'W010', message:'Technisch probleem bij AI-verwerking. Probeer het opnieuw.' }]
   };
 }
-

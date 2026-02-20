@@ -34,7 +34,7 @@ Een eenvoudige webtool (1 pagina) om een persbericht (.txt/.docx/.pdf) te upload
    - New → Web Service
    - Koppel de Github repo
    - Branch: `main`
-   - Build command: `npm install`
+   - Build command: `npm ci` (vereist `package-lock.json` in de repo)
    - Start command: `npm start`
    - Deploy
 
