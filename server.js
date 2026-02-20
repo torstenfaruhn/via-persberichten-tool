@@ -289,7 +289,10 @@ app.get('/api/error-log', async (req, res) => {
 
 app.get('/healthz', (req, res) => res.status(200).send('ok'));
 
-app.listen(PORT, async () => {
+(async () => {
   await ensureTmpRoot();
-  safeLog(`server_started:${PORT}`);
-});
+
+  app.listen(PORT, '0.0.0.0', () => {
+    safeLog(`server_started:${PORT}`);
+  });
+})();
