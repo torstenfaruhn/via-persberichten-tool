@@ -149,9 +149,7 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
     // Compat fallback: als structured output 400 geeft, probeer nog 1x zonder response_format.
     if(classified?.errorCode === 'E400' && retryOnce){
       try{
-        const strictInstr = instructions + '
-
-BELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+        const strictInstr = instructions + "\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.";
         const txt2 = await callLLMPlain({apiKey,instructions:strictInstr,input,model});
         const p2 = safeParse(txt2||'');
         if(p2.ok) return {ok:true,data:p2.data};
