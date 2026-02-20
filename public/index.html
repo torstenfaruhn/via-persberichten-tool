@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="nl">
+<html lang="nl" data-theme="light">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
@@ -22,7 +22,12 @@
         <h1 class="header__title">VIA Persberichten-tool</h1>
       </div>
 
-      <div class="header__right" aria-hidden="true"></div>
+      <div class="header__right">
+        <button id="themeToggle" class="icon-btn" type="button" aria-label="Wissel thema">
+          <span class="icon-btn__icon" aria-hidden="true">🌙</span>
+          <span class="icon-btn__text">Donker</span>
+        </button>
+      </div>
     </header>
 
     <main id="main" class="container">
@@ -35,11 +40,11 @@
         </p>
       </section>
 
-      <section class="panel" aria-label="Stap 1 API-key">
+      <section class="panel panel--center" aria-label="Stap 1 API-key">
         <label class="label" for="apiKey">API-key</label>
         <input
           id="apiKey"
-          class="input"
+          class="input input--narrow"
           type="password"
           inputmode="text"
           autocomplete="off"
@@ -69,7 +74,13 @@
       </section>
     </main>
 
-    <div id="snackbar" class="snackbar" role="status" aria-live="polite" aria-hidden="true">Bezig…</div>
+    <div
+      id="snackbar"
+      class="snackbar"
+      role="status"
+      aria-live="polite"
+      aria-hidden="true"
+    >Bezig... een ogenblik geduld</div>
 
     <footer class="footer footer--center">
       <div class="footer__inner">
