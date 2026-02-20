@@ -1,7 +1,63 @@
 (() => {
+  // -----------------------------
+  // Theme: auto (17:00-00:00) + toggle
+  // -----------------------------
+  const THEME_KEY = "via_theme_pref"; // "light" | "dark" | null
+
+  function isAutoDarkNowLocal() {
+    // "Amsterdam": in de praktijk gebruikt de browser lokale tijd.
+    // Als je device niet op Amsterdam staat, wijkt dit af.
+    const h = new Date().getHours();
+    return h >= 17; // 17:00 t/m 23:59
+  }
+
+  function setTheme(theme) {
+    const html = document.documentElement;
+    html.setAttribute("data-theme", theme);
+
+    const btn = document.getElementById("themeToggle");
+    if (btn) {
+      const icon = btn.querySelector(".icon-btn__icon");
+      const text = btn.querySelector(".icon-btn__text");
+      if (theme === "dark") {
+        if (icon) icon.textContent = "☀️";
+        if (text) text.textContent = "Licht";
+        btn.setAttribute("aria-label", "Wissel naar lichte modus");
+      } else {
+        if (icon) icon.textContent = "🌙";
+        if (text) text.textContent = "Donker";
+        btn.setAttribute("aria-label", "Wissel naar donkere modus");
+      }
+    }
+  }
+
+  function initTheme() {
+    const stored = localStorage.getItem(THEME_KEY);
+    if (stored === "light" || stored === "dark") {
+      setTheme(stored);
+      return;
+    }
+    setTheme(isAutoDarkNowLocal() ? "dark" : "light");
+  }
+
+  function bindThemeToggle() {
+    const btn = document.getElementById("themeToggle");
+    if (!btn) return;
+
+    btn.addEventListener("click", () => {
+      const current = document.documentElement.getAttribute("data-theme") || "light";
+      const next = current === "dark" ? "light" : "dark";
+      localStorage.setItem(THEME_KEY, next);
+      setTheme(next);
+    });
+  }
+
+  // -----------------------------
+  // App state + snackbar fix
+  // -----------------------------
   let apiKey = null;
   let jobId = null;
-  let lastSelectedFilename = null; // voor fallback
+  let lastSelectedFilename = null;
 
   const el = {
     apiKey: document.getElementById("apiKey"),
@@ -17,7 +73,9 @@
   };
 
   function setSnackbar(isOpen) {
+    // Hard fix: dwing de snackbar altijd correct verborgen/zichtbaar.
     el.snackbar.setAttribute("aria-hidden", isOpen ? "false" : "true");
+    el.snackbar.style.display = isOpen ? "block" : "none";
   }
 
   function setSignals(signals, showTechHelp) {
@@ -103,22 +161,16 @@
   }
 
   function buildFallbackOutputName(selectedFilename) {
-    // Default: text/plain
     const defaultName = "document_bewerkt.txt";
     if (!selectedFilename) return defaultName;
 
-    // Strip padjes (voor de zekerheid) en extensie
     const justName = String(selectedFilename).split(/[\\/]/).pop() || "";
     const base = justName.replace(/\.[^.]+$/, "") || "document";
     return `${base}_bewerkt.txt`;
   }
 
   function parseContentDispositionFilename(dispo) {
-    // Ondersteun filename*=UTF-8''... en filename="..."
-    // Retourneert null als er niks bruikbaars is.
     const d = String(dispo || "");
-
-    // 1) filename*=
     const mStar = d.match(/filename\*\s*=\s*UTF-8''([^;\n]+)/i);
     if (mStar && mStar[1]) {
       try {
@@ -127,14 +179,14 @@
         return mStar[1].trim().replace(/"/g, "");
       }
     }
-
-    // 2) filename=
     const m = d.match(/filename\s*=\s*"([^"]+)"/i) || d.match(/filename\s*=\s*([^;\n]+)/i);
     if (m && m[1]) return m[1].trim().replace(/"/g, "");
-
     return null;
   }
 
+  // -----------------------------
+  // Events
+  // -----------------------------
   el.apiKey.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
     const val = (el.apiKey.value || "").trim();
@@ -214,7 +266,6 @@
     if (!requireKeyOrShowError()) return;
     if (!jobId) return;
 
-    // Download via fetch zodat we de API-key header kunnen meesturen.
     setState("processing");
     try {
       const res = await fetch(`/api/download?jobId=${encodeURIComponent(jobId)}`, {
@@ -224,7 +275,6 @@
 
       const ct = (res.headers.get("content-type") || "").toLowerCase();
 
-      // Als de backend JSON terugstuurt, is het een foutmelding.
       if (ct.includes("application/json")) {
         const json = await res.json().catch(() => null);
         if (!json) {
@@ -248,7 +298,6 @@
 
       const blob = await res.blob();
 
-      // Bestandsnaam: uit Content-Disposition, anders fallback naar text/plain
       const dispo = res.headers.get("content-disposition") || "";
       const fromHeader = parseContentDispositionFilename(dispo);
       const filename = fromHeader || buildFallbackOutputName(lastSelectedFilename);
@@ -263,11 +312,19 @@
       URL.revokeObjectURL(url);
 
       setState("done");
-    } catch (e) {
+    } catch (_) {
       setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
       setState("error");
     }
   });
 
+  // -----------------------------
+  // Init
+  // -----------------------------
+  initTheme();
+  bindThemeToggle();
+
+  // Cruciaal: snackbar altijd "uit" bij (hard) reload, ongeacht eerdere state.
+  setSnackbar(false);
   setState("init");
 })();
