@@ -5,8 +5,6 @@
   const THEME_KEY = "via_theme_pref"; // "light" | "dark" | null
 
   function isAutoDarkNowLocal() {
-    // "Amsterdam": in de praktijk gebruikt de browser lokale tijd.
-    // Als je device niet op Amsterdam staat, wijkt dit af.
     const h = new Date().getHours();
     return h >= 17; // 17:00 t/m 23:59
   }
@@ -53,11 +51,13 @@
   }
 
   // -----------------------------
-  // App state + snackbar fix
+  // App state + snackbar
   // -----------------------------
   let apiKey = null;
   let jobId = null;
   let lastSelectedFilename = null;
+
+  let snackTimer = null;
 
   const el = {
     apiKey: document.getElementById("apiKey"),
@@ -72,10 +72,34 @@
     techHelp: document.getElementById("techHelp"),
   };
 
-  function setSnackbar(isOpen) {
-    // Hard fix: dwing de snackbar altijd correct verborgen/zichtbaar.
+  function clearSnackTimer() {
+    if (snackTimer) {
+      clearTimeout(snackTimer);
+      snackTimer = null;
+    }
+  }
+
+  function setSnackbar(isOpen, { text, variant, autoHideMs } = {}) {
+    // variant: "progress" | "success" | null
+    clearSnackTimer();
+
+    if (typeof text === "string") {
+      el.snackbar.textContent = text;
+    }
+
+    // reset classes
+    el.snackbar.classList.remove("snackbar--progress", "snackbar--success");
+    if (variant === "progress") el.snackbar.classList.add("snackbar--progress");
+    if (variant === "success") el.snackbar.classList.add("snackbar--success");
+
     el.snackbar.setAttribute("aria-hidden", isOpen ? "false" : "true");
     el.snackbar.style.display = isOpen ? "block" : "none";
+
+    if (isOpen && typeof autoHideMs === "number" && autoHideMs > 0) {
+      snackTimer = setTimeout(() => {
+        setSnackbar(false);
+      }, autoHideMs);
+    }
   }
 
   function setSignals(signals, showTechHelp) {
@@ -126,14 +150,23 @@
       el.btnUpload.disabled = true;
       el.btnProcess.disabled = true;
       el.btnDownload.disabled = true;
-      setSnackbar(true);
+      setSnackbar(true, {
+        text: "Bezig... een ogenblik geduld",
+        variant: "progress",
+      });
       return;
     }
     if (state === "done") {
       el.btnUpload.disabled = false;
       el.btnProcess.disabled = false;
       el.btnDownload.disabled = !hasJob;
-      setSnackbar(false);
+
+      // groene snackbar 3s
+      setSnackbar(true, {
+        text: "Klaar om te downloaden!",
+        variant: "success",
+        autoHideMs: 3000,
+      });
       return;
     }
     if (state === "error") {
@@ -311,6 +344,7 @@
       a.remove();
       URL.revokeObjectURL(url);
 
+      // na download laten we UI in done-state staan, geen extra snackbar nodig
       setState("done");
     } catch (_) {
       setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
@@ -324,7 +358,7 @@
   initTheme();
   bindThemeToggle();
 
-  // Cruciaal: snackbar altijd "uit" bij (hard) reload, ongeacht eerdere state.
+  // Hard reset snackbar op load (tegen "blijft hangen")
   setSnackbar(false);
   setState("init");
 })();
