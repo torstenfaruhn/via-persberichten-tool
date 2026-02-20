@@ -15,34 +15,6 @@
     techHelp: document.getElementById("techHelp"),
   };
 
-  // API-key alleen voor deze sessie onthouden (niet opslaan op de server)
-  try {
-    const saved = (sessionStorage.getItem("apiKey") || "").trim();
-    if (saved) apiKey = saved;
-  } catch (_) {
-    // geen actie
-  }
-
-  function setApiKeyFromInput() {
-    const val = (el.apiKey.value || "").trim();
-    apiKey = val.length ? val : null;
-
-    try {
-      if (apiKey) sessionStorage.setItem("apiKey", apiKey);
-      else sessionStorage.removeItem("apiKey");
-    } catch (_) {
-      // geen actie
-    }
-
-    if (!apiKey) {
-      el.apiKeyError.textContent = "API-key is vereist om verder te gaan.";
-      setState("init");
-      return;
-    }
-    el.apiKeyError.textContent = "";
-    setState("keyReady");
-  }
-
   function setSnackbar(isOpen) {
     el.snackbar.setAttribute("aria-hidden", isOpen ? "false" : "true");
   }
@@ -131,20 +103,15 @@
 
   el.apiKey.addEventListener("keydown", (e) => {
     if (e.key !== "Enter") return;
-    e.preventDefault();
-    setApiKeyFromInput();
-  });
-
-  // Extra: ook zonder Enter moet het werken (plakken met muis, autofill, etc.)
-  el.apiKey.addEventListener("input", () => {
-    // Geen foutmelding bij typen; alleen knoppen updaten
     const val = (el.apiKey.value || "").trim();
     apiKey = val.length ? val : null;
-    el.btnUpload.disabled = !apiKey;
-  });
-
-  el.apiKey.addEventListener("blur", () => {
-    setApiKeyFromInput();
+    if (!apiKey) {
+      el.apiKeyError.textContent = "API-key is vereist om verder te gaan.";
+      setState("init");
+      return;
+    }
+    el.apiKeyError.textContent = "";
+    setState("keyReady");
   });
 
   el.btnUpload.addEventListener("click", () => {
@@ -248,8 +215,7 @@
       // Probeer bestandsnaam uit Content-Disposition te halen.
       let filename = "persbericht.docx";
       const dispo = res.headers.get("content-disposition") || "";
-      const match = dispo.match(/filename\*?=(?:UTF-8''|\")?([^;
-\"]+)/i);
+      const match = dispo.match(/filename\*?=(?:UTF-8''|")?([^;"\n]+)(?:")?/i);
       if (match && match[1]) {
         filename = decodeURIComponent(match[1]).replace(/"/g, "");
       }
@@ -270,11 +236,5 @@
     }
   });
 
-  // Als er al een key in de sessie staat: vul in en activeer stap 2
-  if (apiKey) {
-    el.apiKey.value = apiKey;
-    setState("keyReady");
-  } else {
-    setState("init");
-  }
+  setState("init");
 })();
