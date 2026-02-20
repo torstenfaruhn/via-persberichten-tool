@@ -1,5 +1,5 @@
 (() => {
-  let apiKey = null;
+  let apiKey = (sessionStorage.getItem('apiKey') || '').trim() || null;
   let jobId = null;
 
   const el = {
@@ -14,6 +14,11 @@
     snackbar: document.getElementById("snackbar"),
     techHelp: document.getElementById("techHelp"),
   };
+
+  if (apiKey) {
+    el.apiKey.value = apiKey;
+  }
+
 
   function setSnackbar(isOpen) {
     el.snackbar.setAttribute("aria-hidden", isOpen ? "false" : "true");
@@ -105,9 +110,11 @@
     if (e.key !== "Enter") return;
     const val = (el.apiKey.value || "").trim();
     apiKey = val.length ? val : null;
+    if (apiKey) sessionStorage.setItem('apiKey', apiKey);
+    else sessionStorage.removeItem('apiKey');
     if (!apiKey) {
       el.apiKeyError.textContent = "API-key is vereist om verder te gaan.";
-      setState("init");
+      setState(apiKey ? "keyReady" : "init");
       return;
     }
     el.apiKeyError.textContent = "";
@@ -237,5 +244,5 @@
     }
   });
 
-  setState("init");
+  setState(apiKey ? "keyReady" : "init");
 })();
