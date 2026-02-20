@@ -21,7 +21,8 @@ const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 const TMP_ROOT = path.join(os.tmpdir(), 'via-tool');
 const JOB_TTL_MS = 30 * 60 * 1000;
 
-const jobs = new Map(); // jobId -> { dir, inputPath, outputPath, createdAt, status }
+// jobId -> { dir, inputPath, outputPath, originalName, createdAt, status }
+const jobs = new Map();
 
 app.use((req, res, next) => {
   res.setHeader('Referrer-Policy', 'no-referrer');
@@ -135,6 +136,34 @@ function requireApiKey(req, res, next) {
   next();
 }
 
+/**
+ * Voorkomt header-injectie en rare paden.
+ * - verwijdert CR/LF
+ * - neemt alleen basename
+ */
+function sanitizeOriginalName(originalName) {
+  const s = String(originalName || '').replace(/[\r\n]/g, '');
+  // Alleen de bestandsnaam, geen pad.
+  return path.basename(s);
+}
+
+/**
+ * RFC5987-encoding voor filename*
+ */
+function encodeRFC5987ValueChars(str) {
+  return encodeURIComponent(str)
+    .replace(/['()]/g, escape)
+    .replace(/\*/g, '%2A')
+    .replace(/%(7C|60|5E)/g, (m) => m.toLowerCase());
+}
+
+function buildDownloadFilename(originalName) {
+  const safe = sanitizeOriginalName(originalName || 'document.txt');
+  const base = path.parse(safe).name || 'document';
+  // Output is altijd text/plain
+  return `${base}_bewerkt.txt`;
+}
+
 app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) => {
   try {
     await ensureTmpRoot();
@@ -148,7 +177,9 @@ app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) =
       });
     }
 
-    if (!isAllowedExt(req.file.originalname)) {
+    const originalName = sanitizeOriginalName(req.file.originalname);
+
+    if (!isAllowedExt(originalName)) {
       return res.status(400).json({
         status: 'error',
         signals: [{ code: 'E002', message: 'Bestandstype niet ondersteund. Upload een .txt, .docx of .pdf.' }],
@@ -161,13 +192,14 @@ app.post('/api/upload', requireApiKey, upload.single('file'), async (req, res) =
     const dir = path.join(TMP_ROOT, jobId);
     await fsp.mkdir(dir, { recursive: true });
 
-    const inputPath = path.join(dir, 'input' + path.extname(req.file.originalname).toLowerCase());
+    const inputPath = path.join(dir, 'input' + path.extname(originalName).toLowerCase());
     await fsp.writeFile(inputPath, req.file.buffer);
 
     jobs.set(jobId, {
       dir,
       inputPath,
       outputPath: path.join(dir, 'output.txt'),
+      originalName, // <-- nieuw: bewaren voor downloadnaam
       createdAt: Date.now(),
       status: 'uploaded'
     });
@@ -234,7 +266,12 @@ app.post('/api/process', requireApiKey, async (req, res) => {
     safeLog('error_code:W010');
     return res.status(500).json({
       status: 'error',
-      signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }],
+      signals: [
+        {
+          code: 'W010',
+          message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.'
+        }
+      ],
       techHelp: true,
       auditLogUrl: `/api/error-log?jobId=${encodeURIComponent(jobId)}&code=W010`
     });
@@ -257,8 +294,14 @@ app.get('/api/download', requireApiKey, async (req, res) => {
   try {
     await fsp.access(job.outputPath, fs.constants.R_OK);
 
+    const filename = buildDownloadFilename(job.originalName);
+
     res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-    res.setHeader('Content-Disposition', 'attachment; filename="nieuwsbericht.txt"');
+    // Zorg voor brede browser-compatibiliteit + UTF-8 support:
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="${filename.replace(/"/g, '')}"; filename*=UTF-8''${encodeRFC5987ValueChars(filename)}`
+    );
 
     const stream = fs.createReadStream(job.outputPath);
     stream.pipe(res);
