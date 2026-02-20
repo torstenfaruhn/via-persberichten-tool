@@ -8,6 +8,30 @@ const { titleLengthWarnings } = require('../validators/w005_w006_titleLen');
 const { missingWWarnings, minFiveWError } = require('../validators/wFields');
 const { contactWarnings } = require('../validators/w009_contactFound');
 
+function splitParagraphs(body) {
+  return String(body || '')
+    .split(/\n\s*\n+/)     // split op lege regels
+    .map((p) => p.trim())
+    .filter(Boolean);
+}
+
+function ordinalWordNl(n) {
+  // 1 -> eerste, 2 -> tweede, ... (tot 10), daarna "11e" etc.
+  const map = {
+    1: 'eerste',
+    2: 'tweede',
+    3: 'derde',
+    4: 'vierde',
+    5: 'vijfde',
+    6: 'zesde',
+    7: 'zevende',
+    8: 'achtste',
+    9: 'negende',
+    10: 'tiende',
+  };
+  return map[n] || `${n}e`;
+}
+
 function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo }) {
   const errors = [];
   const warnings = [];
@@ -61,11 +85,15 @@ function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo }
     })
   );
 
-  warnings.push(
-    ...strongClaimWarnings(
-      [llmData?.title, llmData?.intro, llmData?.body].filter(Boolean).join(' ')
-    )
-  );
+  // W004: run per onderdeel zodat we locatie kunnen melden
+  warnings.push(...strongClaimWarnings(llmData?.title || '', { location: 'kop' }));
+  warnings.push(...strongClaimWarnings(llmData?.intro || '', { location: 'intro' }));
+
+  const paras = splitParagraphs(llmData?.body || '');
+  paras.forEach((p, idx) => {
+    const label = `${ordinalWordNl(idx + 1)} alinea`;
+    warnings.push(...strongClaimWarnings(p, { location: label }));
+  });
 
   warnings.push(...nameInconsistencyWarnings(llmData));
   warnings.push(...externalVerifyWarnings(llmData));
