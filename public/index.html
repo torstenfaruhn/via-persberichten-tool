@@ -10,31 +10,35 @@
     <a class="skiplink" href="#main">Ga naar inhoud</a>
 
     <header class="header">
-      <div class="header__left">
-        <img
-          src="/assets/Logo-VIA-De-Limburger.png"
-          alt="Logo VIA De Limburger"
-          class="header__logo"
-        />
-      </div>
+      <div class="header__inner">
+        <div class="header__left">
+          <img
+            src="/assets/Logo-VIA-De-Limburger.png"
+            alt="Logo VIA De Limburger"
+            class="header__logo"
+          />
+        </div>
 
-      <div class="header__center">
-        <h1 class="header__title">VIA Persberichten-tool</h1>
-      </div>
+        <div class="header__center">
+          <h1 class="header__title">VIA Persberichten-tool</h1>
+        </div>
 
-      <div class="header__right">
-        <button id="themeToggle" class="icon-btn" type="button" aria-label="Wissel thema">
-          <span class="icon-btn__icon" aria-hidden="true">🌙</span>
-          <span class="icon-btn__text">Donker</span>
-        </button>
+        <div class="header__right">
+          <button id="themeToggle" class="icon-btn" type="button" aria-label="Wissel thema">
+            <span class="icon-btn__icon" aria-hidden="true">🌙</span>
+            <span class="icon-btn__text">Donker</span>
+          </button>
+        </div>
       </div>
     </header>
 
     <main id="main" class="container">
       <section class="intro" aria-label="Uitleg">
         <p class="intro__text">
-          Dit is de persberichten-tool voor hyperlokale persberichten. Geüploade persberichten worden met behulp van AI herschreven, en vervolgens als concepttekst-download aangeboden. Het is de verantwoordelijkheid van de (eind)redacteur om de tekst te verwerken tot een journalistiek eindproduct. Klik op de knoppen hieronder om een persbericht te uploaden, bewerken en het resultaat te downloaden.<br><br>
-          In het venster SIGNALEN worden meldingen getoond met betrekking tot de verwerking. 
+          Dit is de persberichten-tool voor hyperlokale persberichten. Geüploade persberichten worden met behulp van AI herschreven, en vervolgens als concepttekst-download aangeboden. Het is de verantwoordelijkheid van de (eind)redacteur om de tekst conform de journalistieke afspraken
+          van De Limburger te verwerken.
+          Klik op de knoppen hieronder om een persbericht te uploaden, bewerken en het resultaat te downloaden.
+          In het venster onderin worden meldingen getoond met betrekking tot fouten, conflicten of ontbrekende gegevens die tijdens de verwerking worden gedetecteerd.
         </p>
       </section>
 
@@ -67,7 +71,7 @@
         <h2 class="signals__title">SIGNALEN</h2>
         <ul class="signals__list" id="signalsList"></ul>
         <div class="signals__tech" id="techHelp" hidden>
-          Waarschuwingen (W-codes) moeten door (eind)redacteur worden beoordeeld.<br>Technische foutmeldingen (E-codes) kopiëren sturen naar de beheerder van deze site.
+          Kopieer de technische informatie/logs en stuur deze naar de beheerder van deze site.
         </div>
       </section>
     </main>
@@ -82,9 +86,9 @@
 
     <footer class="footer footer--center">
       <div class="footer__inner">
-        © 2026 MHLI/DL. <br>Let op: AI-gegenereerde tekst. De uitvoer van deze tool concepttekst. De inhoud
+        © 2026 MHLI/DL. Let op: AI-gegenereerde tekst. De uitvoer van deze tool concepttekst. De inhoud
         is bedoeld als hulpmiddel voor redactionele bewerking. De output is geen medisch, juridisch,
-        financieel of ander professioneel advies. <br> De redactie blijft zelf verantwoordelijk voor
+        financieel of ander professioneel advies. De redactie blijft zelf verantwoordelijk voor
         fact-checking en eindredactie.
       </div>
     </footer>
