@@ -174,10 +174,67 @@
     setState("done");
   });
 
-  el.btnDownload.addEventListener("click", () => {
+  el.btnDownload.addEventListener("click", async () => {
     if (!requireKeyOrShowError()) return;
     if (!jobId) return;
-    window.location.href = `/api/download?jobId=${encodeURIComponent(jobId)}`;
+
+    // Download via fetch zodat we de API-key header kunnen meesturen.
+    setState("processing");
+    try {
+      const res = await fetch(`/api/download?jobId=${encodeURIComponent(jobId)}`, {
+        method: "GET",
+        headers: { "X-API-Key": apiKey },
+      });
+
+      const ct = (res.headers.get("content-type") || "").toLowerCase();
+
+      // Als de backend JSON terugstuurt, is het een foutmelding.
+      if (ct.includes("application/json")) {
+        const json = await res.json().catch(() => null);
+        if (!json) {
+          setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
+          setState("error");
+          return;
+        }
+        if (json.status === "error") {
+          setSignals(json.signals || [], json.techHelp === true);
+          if (json.auditLogUrl) window.location.href = json.auditLogUrl;
+          setState("error");
+          return;
+        }
+      }
+
+      if (!res.ok) {
+        setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
+        setState("error");
+        return;
+      }
+
+      const blob = await res.blob();
+
+      // Probeer bestandsnaam uit Content-Disposition te halen.
+      let filename = "persbericht.docx";
+      const dispo = res.headers.get("content-disposition") || "";
+      const match = dispo.match(/filename\*?=(?:UTF-8''|\")?([^;
+\"]+)/i);
+      if (match && match[1]) {
+        filename = decodeURIComponent(match[1]).replace(/"/g, "");
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+
+      setState("done");
+    } catch (e) {
+      setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
+      setState("error");
+    }
   });
 
   setState("init");
