@@ -10,7 +10,7 @@ const {contactWarnings}=require('../validators/w009_contactFound');
 
 function runValidators({sourceCharCount,llmData,detectorResult,contactInfo}){
   const errors=[]; const warnings=[];
-  if(detectorResult?.decision==='error'){errors.push({code:'E007',message:M.E007}); return {errors,warnings};}
+  if(detectorResult?.decision==='error'){warnings.push({code:'W015',message:M.E007}); // zelfde tekst, maar geen stop // niet returnen; ga door}
   if(detectorResult?.decision==='warn'){warnings.push({code:'W015',message:'Mogelijk meerdere persberichten in de upload. Controleer de bron.'});}
   if(typeof sourceCharCount==='number'&&sourceCharCount<950){errors.push({code:'E004',message:M.E004}); return {errors,warnings};}
 
