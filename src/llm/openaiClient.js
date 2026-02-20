@@ -73,7 +73,7 @@ async function callLLM({apiKey,instructions,input,model}){
         instructions,
         input,
         store:false,
-        text:{format:{type:'json_schema',json_schema:{name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}}
+        text:{format:{type:'json_schema',name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}
       });
       return extractJsonText(resp);
     }catch(err){
