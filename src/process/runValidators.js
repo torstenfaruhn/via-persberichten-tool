@@ -4,27 +4,30 @@ const {strongClaimWarnings}=require('../validators/w004_strongClaims');
 const {nameInconsistencyWarnings}=require('../validators/w003_nameInconsistency');
 const {externalVerifyWarnings}=require('../validators/w008_externalVerification');
 const {lengthWarnings}=require('../validators/w007_lengthOutOfRange');
-const {titleLengthWarnings}=require('../validators/w005_w006_titleLen');
-const {missingWWarnings,minFiveWError}=require('../validators/wFields');
+const {titleLengthWarnings}=require('../validators/w006_titleLength');
+const {quoteWarnings}=require('../validators/w005_quotes');
 const {contactWarnings}=require('../validators/w009_contactFound');
 
 function runValidators({sourceCharCount,llmData,detectorResult,contactInfo}){
   const errors=[]; const warnings=[];
-  if(detectorResult?.decision==='error'){warnings.push({code:'W015',message:M.E007}); // zelfde tekst, maar geen stop // niet returnen; ga door}
-  if(detectorResult?.decision==='warn'){warnings.push({code:'W015',message:'Mogelijk meerdere persberichten in de upload. Controleer de bron.'});}
-  if(typeof sourceCharCount==='number'&&sourceCharCount<950){errors.push({code:'E004',message:M.E004}); return {errors,warnings};}
+  if(detectorResult?.decision==='error'){
+    // Voorheen: harde stop (E007). Nu: waarschuwing (W015) zodat de tool door kan.
+    warnings.push({code:'W015',message:M.E007});
+  }
+  else if(detectorResult?.decision==='warn'){
+    warnings.push({code:'W015',message:'Mogelijk meerdere persberichten in de upload. Controleer de bron.'});
+  }
 
-  const mw=missingWWarnings(llmData); warnings.push(...mw.warnings);
-  const min=minFiveWError(llmData); if(min.error){errors.push(min.error); return {errors,warnings};}
+  if(typeof sourceCharCount==='number'&&sourceCharCount>0){
+    warnings.push(...lengthWarnings(sourceCharCount));
+  }
 
-  if(!String(llmData?.w_fields?.waarom||'').trim()) warnings.push({code:'W001',message:'Waarom ontbreekt. Controleer of dit in de bron staat.'});
-  if(!String(llmData?.w_fields?.hoe||'').trim()) warnings.push({code:'W002',message:'Hoe ontbreekt. Controleer of dit in de bron staat.'});
-
-  warnings.push(...titleLengthWarnings(llmData?.title||''));
-  warnings.push(...lengthWarnings({intro:llmData?.intro||'',body:llmData?.body||''}));
-  warnings.push(...strongClaimWarnings([llmData?.title,llmData?.intro,llmData?.body].filter(Boolean).join(' ')));
+  warnings.push(...titleLengthWarnings(llmData));
+  warnings.push(...quoteWarnings(llmData));
   warnings.push(...nameInconsistencyWarnings(llmData));
+  warnings.push(...strongClaimWarnings(llmData));
   warnings.push(...externalVerifyWarnings(llmData));
+
   if(contactInfo?.found) warnings.push(...contactWarnings());
   return {errors,warnings};
 }
