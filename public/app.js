@@ -1,12 +1,48 @@
 (() => {
   // -----------------------------
-  // Theme: auto (17:00-00:00) + toggle
+  // Theme: AUTO (Europe/Amsterdam) 17:00–00:00 + manual toggle (tijdelijke override)
   // -----------------------------
-  const THEME_KEY = "via_theme_pref"; // "light" | "dark" | null
+  const THEME_MODE_KEY = "via_theme_mode";          // "auto" | "manual"
+  const THEME_PREF_KEY = "via_theme_pref";          // "light" | "dark" (alleen relevant in manual)
+  const THEME_UNTIL_KEY = "via_theme_override_until"; // epoch ms (alleen relevant in manual)
 
-  function isAutoDarkNowLocal() {
-    const h = new Date().getHours();
-    return h >= 17; // 17:00 t/m 23:59
+  function getAmsterdamTimeParts() {
+    // Betrouwbaar uur/minuut in Europe/Amsterdam, ongeacht device timezone
+    const dtf = new Intl.DateTimeFormat("nl-NL", {
+      timeZone: "Europe/Amsterdam",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    });
+
+    const parts = dtf.formatToParts(new Date());
+    const map = {};
+    for (const p of parts) map[p.type] = p.value;
+
+    const hour = Number(map.hour);
+    const minute = Number(map.minute);
+    return { hour, minute };
+  }
+
+  function isAutoDarkAmsterdamNow() {
+    const { hour } = getAmsterdamTimeParts();
+    // Dark tussen 17:00 en 00:00 → uur 17 t/m 23
+    return hour >= 17;
+  }
+
+  function minutesUntilNextBoundaryAmsterdam() {
+    // Volgende grens is óf 17:00 óf 00:00 (middernacht) in Amsterdam
+    const { hour, minute } = getAmsterdamTimeParts();
+
+    // Als we in dark-window zitten (>=17), volgende switch is 00:00
+    if (hour >= 17) {
+      const minsLeft = (24 - hour) * 60 - minute; // tot 24:00
+      return Math.max(1, minsLeft);
+    }
+
+    // Anders: volgende switch is 17:00
+    const minsLeft = (17 - hour) * 60 - minute;
+    return Math.max(1, minsLeft);
   }
 
   function setTheme(theme) {
@@ -29,13 +65,49 @@
     }
   }
 
+  function clearManualOverride() {
+    localStorage.removeItem(THEME_MODE_KEY);
+    localStorage.removeItem(THEME_PREF_KEY);
+    localStorage.removeItem(THEME_UNTIL_KEY);
+  }
+
+  function getThemeMode() {
+    const m = localStorage.getItem(THEME_MODE_KEY);
+    return m === "manual" ? "manual" : "auto";
+  }
+
+  function applyAutoTheme() {
+    setTheme(isAutoDarkAmsterdamNow() ? "dark" : "light");
+  }
+
   function initTheme() {
-    const stored = localStorage.getItem(THEME_KEY);
-    if (stored === "light" || stored === "dark") {
-      setTheme(stored);
+    const mode = getThemeMode();
+
+    if (mode === "manual") {
+      const untilRaw = localStorage.getItem(THEME_UNTIL_KEY);
+      const until = untilRaw ? Number(untilRaw) : NaN;
+
+      // Als manual verlopen is → terug naar auto
+      if (!Number.isFinite(until) || Date.now() >= until) {
+        clearManualOverride();
+        applyAutoTheme();
+        return;
+      }
+
+      const pref = localStorage.getItem(THEME_PREF_KEY);
+      if (pref === "light" || pref === "dark") {
+        setTheme(pref);
+        return;
+      }
+
+      // manual zonder pref → terug naar auto
+      clearManualOverride();
+      applyAutoTheme();
       return;
     }
-    setTheme(isAutoDarkNowLocal() ? "dark" : "light");
+
+    // default: auto
+    applyAutoTheme();
   }
 
   function bindThemeToggle() {
@@ -43,11 +115,37 @@
     if (!btn) return;
 
     btn.addEventListener("click", () => {
+      // Toggle tussen licht/donker, maar als tijdelijke override tot volgende boundary.
       const current = document.documentElement.getAttribute("data-theme") || "light";
       const next = current === "dark" ? "light" : "dark";
-      localStorage.setItem(THEME_KEY, next);
+
+      const mins = minutesUntilNextBoundaryAmsterdam();
+      const until = Date.now() + mins * 60 * 1000;
+
+      localStorage.setItem(THEME_MODE_KEY, "manual");
+      localStorage.setItem(THEME_PREF_KEY, next);
+      localStorage.setItem(THEME_UNTIL_KEY, String(until));
+
       setTheme(next);
     });
+  }
+
+  function scheduleAutoThemeChecks() {
+    // 1) Elke minuut: als auto, pas toe (ook als tijdzone/DST verandert)
+    setInterval(() => {
+      const mode = getThemeMode();
+      if (mode !== "auto") {
+        // Manual kan verlopen; check dat ook zonder reload
+        const untilRaw = localStorage.getItem(THEME_UNTIL_KEY);
+        const until = untilRaw ? Number(untilRaw) : NaN;
+        if (Number.isFinite(until) && Date.now() >= until) {
+          clearManualOverride();
+          applyAutoTheme();
+        }
+        return;
+      }
+      applyAutoTheme();
+    }, 60_000);
   }
 
   // -----------------------------
@@ -80,14 +178,12 @@
   }
 
   function setSnackbar(isOpen, { text, variant, autoHideMs } = {}) {
-    // variant: "progress" | "success" | null
     clearSnackTimer();
 
     if (typeof text === "string") {
       el.snackbar.textContent = text;
     }
 
-    // reset classes
     el.snackbar.classList.remove("snackbar--progress", "snackbar--success");
     if (variant === "progress") el.snackbar.classList.add("snackbar--progress");
     if (variant === "success") el.snackbar.classList.add("snackbar--success");
@@ -96,9 +192,7 @@
     el.snackbar.style.display = isOpen ? "block" : "none";
 
     if (isOpen && typeof autoHideMs === "number" && autoHideMs > 0) {
-      snackTimer = setTimeout(() => {
-        setSnackbar(false);
-      }, autoHideMs);
+      snackTimer = setTimeout(() => setSnackbar(false), autoHideMs);
     }
   }
 
@@ -160,8 +254,6 @@
       el.btnUpload.disabled = false;
       el.btnProcess.disabled = false;
       el.btnDownload.disabled = !hasJob;
-
-      // groene snackbar 3s
       setSnackbar(true, {
         text: "Klaar om te downloaden!",
         variant: "success",
@@ -344,7 +436,6 @@
       a.remove();
       URL.revokeObjectURL(url);
 
-      // na download laten we UI in done-state staan, geen extra snackbar nodig
       setState("done");
     } catch (_) {
       setSignals([{ code: "W010", message: "Technisch probleem tijdens download. Probeer opnieuw." }], true);
@@ -357,8 +448,9 @@
   // -----------------------------
   initTheme();
   bindThemeToggle();
+  scheduleAutoThemeChecks();
 
-  // Hard reset snackbar op load (tegen "blijft hangen")
+  // Hard reset snackbar on load
   setSnackbar(false);
   setState("init");
 })();
