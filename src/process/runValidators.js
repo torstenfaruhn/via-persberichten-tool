@@ -7,6 +7,7 @@ const { lengthWarnings } = require('../validators/w007_lengthOutOfRange');
 const { titleLengthWarnings } = require('../validators/w005_w006_titleLen');
 const { missingWWarnings, minFiveWError } = require('../validators/wFields');
 const { contactWarnings } = require('../validators/w009_contactFound');
+const { consistencyCheckWarnings } = require('../validators/w016_consistencyCheck');
 
 function splitParagraphs(body) {
   return String(body || '')
@@ -32,7 +33,7 @@ function ordinalWordNl(n) {
   return map[n] || `${n}e`;
 }
 
-function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo }) {
+function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo, consistency }) {
   const errors = [];
   const warnings = [];
 
@@ -97,6 +98,9 @@ function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo }
 
   warnings.push(...nameInconsistencyWarnings(llmData));
   warnings.push(...externalVerifyWarnings(llmData));
+
+  // W016: consistency-audit
+  warnings.push(...consistencyCheckWarnings(consistency));
 
   if (contactInfo?.found) warnings.push(...contactWarnings());
 

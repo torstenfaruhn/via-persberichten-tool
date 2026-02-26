@@ -6,6 +6,61 @@ function bullets(signals) {
   return arr.map((s) => `- ${s.code}: ${s.message}`).join('\n');
 }
 
+function truncate(s, n) {
+  const t = String(s || '');
+  return t.length <= n ? t : (t.slice(0, n - 1) + '…');
+}
+
+function formatConsistencyCheck(consistency) {
+  if (!consistency) return [];
+
+  const ok = Boolean(consistency?.ok);
+  const issues = Array.isArray(consistency?.issues) ? consistency.issues : [];
+
+  const lines = [];
+  lines.push('CONSISTENTIECHECK (voor eindredactie)');
+
+  if (!ok) {
+    lines.push('- Consistentiecheck kon niet worden uitgevoerd. Controleer eigennamen en plaatskoppelingen handmatig.');
+    return lines;
+  }
+
+  if (issues.length === 0) {
+    lines.push('- Geen inconsistenties gedetecteerd.');
+    return lines;
+  }
+
+  // Markdown-achtige tabel (werkt in plain text en is goed scanbaar).
+  lines.push('| Type | Entiteit | Varianten / Plaatsen | Vindplaatsen | Ernst | Opmerking |');
+  lines.push('|---|---|---|---|---|---|');
+
+  for (const it of issues) {
+    const type = String(it?.type || '').trim() || '-';
+    const ent = String(it?.entity_canonical || '').trim() || '-';
+
+    const varOrPlace = (type === 'schrijfwijze')
+      ? (Array.isArray(it?.variants) ? it.variants.filter(Boolean).join(' · ') : '')
+      : (Array.isArray(it?.places) ? it.places.filter(Boolean).join(' · ') : '');
+
+    const locs = Array.isArray(it?.evidence)
+      ? it.evidence
+          .map((e) => String(e?.locator || '').trim())
+          .filter(Boolean)
+          .slice(0, 3)
+          .join(' · ')
+      : '';
+
+    const sev = String(it?.severity || '').trim() || '-';
+    const note = truncate(String(it?.note || '').trim(), 140) || '-';
+
+    // Escape pipes minimally
+    const esc = (x) => String(x || '').replace(/\|/g, '\\|');
+    lines.push(`| ${esc(type)} | ${esc(ent)} | ${esc(varOrPlace)} | ${esc(locs)} | ${esc(sev)} | ${esc(note)} |`);
+  }
+
+  return lines;
+}
+
 /**
  * Bouwt het output-document.
  * Wijziging: verwijdert de KOP/INTRO/BODY-tags en output nu "plain" tekst:
@@ -17,7 +72,7 @@ function bullets(signals) {
  *   (lege regel)
  * Daarna blijven SIGNALEN/BRON/CONTACT zoals voorheen.
  */
-function buildOutput({ llmData, signals, contactLines }) {
+function buildOutput({ llmData, signals, contactLines, consistency }) {
   const title = String(llmData?.title || '').trim();
   const intro = String(llmData?.intro || '').trim();
   const body = String(llmData?.body || '').trim();
@@ -36,6 +91,13 @@ function buildOutput({ llmData, signals, contactLines }) {
 
   // Altijd netjes afsluiten met een lege regel vóór de meta-secties, als er inhoud was.
   if (parts.length > 0) parts.push('');
+
+  // Consistentiecheck (voor SIGNALEN), zodat eindredactie direct context ziet.
+  const cc = formatConsistencyCheck(consistency);
+  if (cc.length > 0) {
+    parts.push(...cc);
+    parts.push('');
+  }
 
   // Meta-secties blijven ongewijzigd.
   parts.push('SIGNALEN');

@@ -1,0 +1,15 @@
+{
+  "version": "2026-02-26",
+  "entities": [
+    {
+      "id": "example-glaspaleis",
+      "type": "gebouw",
+      "canonical_name": "Glaspaleis",
+      "aliases": ["het Glaspaleis"],
+      "canonical_place": "Heerlen",
+      "allowed_places": ["Heerlen"],
+      "status": "active",
+      "notes": "Voorbeeld-entry. Vervang/onderhoud deze lijst met jullie eigen referenties."
+    }
+  ]
+}

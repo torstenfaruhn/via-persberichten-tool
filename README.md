@@ -41,7 +41,10 @@ Een eenvoudige webtool (1 pagina) om een persbericht (.txt/.docx/.pdf) te upload
 ## Render variabelen
 - `MAX_UPLOAD_MB` (default 10)
 - `OPENAI_MODEL` (default gpt-4o-mini)
+- `OPENAI_AUDIT_MODEL` (optional; default: `OPENAI_MODEL`)
 - `STYLEBOOK_PATH` (default: stylebook/stylebook-extract.md)
+- `DISABLE_CONSISTENCY_AUDIT` (set to `1` om de Consistentiecheck uit te zetten)
+- `REFERENCE_ENTITIES_PATH` (optional; pad naar lokale referentielijst JSON. Default: `src/reference/entities.nl.json`)
 
 ## Stijlboek (leidend)
 De map `stylebook/` bevat de stijlboekbronnen. De tool gebruikt in productie **alleen** `stylebook/stylebook-extract.md` via `STYLEBOOK_PATH`.

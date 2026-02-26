@@ -61,9 +61,10 @@ function normalizeJsonCandidate(txt){
 function isTypeError(err){return err instanceof TypeError || err?.name==='TypeError';}
 function getStatus(err){return Number(err?.status || err?.response?.status || err?.statusCode || 0);}
 
-async function callLLM({apiKey,instructions,input,model}){
+async function callLLM({apiKey,instructions,input,model,schema}){
   const client=new OpenAI({apiKey});
   const m=model || 'gpt-4o-mini';
+  const sch = schema || LLM_SCHEMA;
 
   // Path A: Responses API (nieuw)
   if(client?.responses && typeof client.responses.create==='function'){
@@ -73,7 +74,7 @@ async function callLLM({apiKey,instructions,input,model}){
         instructions,
         input,
         store:false,
-        text:{format:{type:'json_schema',name:LLM_SCHEMA.name,schema:LLM_SCHEMA.schema,strict:true}}
+        text:{format:{type:'json_schema',name:sch.name,schema:sch.schema,strict:true}}
       });
       return extractJsonText(resp);
     }catch(err){
@@ -115,7 +116,7 @@ async function callLLMPlain({apiKey,instructions,input,model}){
 }
 
 
-async function generateStructured({apiKey,instructions,input,model,retryOnce}){
+async function generateStructured({apiKey,instructions,input,model,retryOnce,schema}){
   try{
     // Guard: voorkom te grote requests (snel en voorspelbaar)
     const maxChars = Number(process.env.MAX_LLM_CHARS || 120000);
@@ -128,13 +129,13 @@ async function generateStructured({apiKey,instructions,input,model,retryOnce}){
         signals:[{code:'E413', message:`Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`}]
       };
     }
-    const txt=await callLLM({apiKey,instructions,input,model});
+    const txt=await callLLM({apiKey,instructions,input,model,schema});
     const p=safeParse(txt||'');
     if(p.ok) return {ok:true,data:p.data};
 
     if(retryOnce){
       const strictInstr=instructions+'\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
-      const txt2=await callLLM({apiKey,instructions:strictInstr,input,model});
+      const txt2=await callLLM({apiKey,instructions:strictInstr,input,model,schema});
       const p2=safeParse(txt2||'');
       if(p2.ok) return {ok:true,data:p2.data};
     }

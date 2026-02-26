@@ -9,6 +9,10 @@ const {runValidators}=require('./runValidators');
 const {buildOutput}=require('./outputBuilder');
 const {buildInstructions,buildInput}=require('../llm/promptBuilder');
 const {generateStructured}=require('../llm/openaiClient');
+const { buildAuditInstructions, buildAuditInput } = require('../llm/auditPromptBuilder');
+const { AUDIT_SCHEMA } = require('../llm/auditSchema');
+const { loadReferenceEntities } = require('../reference/referenceLoader');
+const { applyReferenceRulesToAudit } = require('../reference/applyReferenceRules');
 
 async function processDocument({inputPath,outputPath,apiKey,maxSeconds}){
   const start=Date.now();
@@ -50,13 +54,63 @@ async function processDocument({inputPath,outputPath,apiKey,maxSeconds}){
 
     if(!timeLeftOk()) return {ok:false,errorCode:'E005',techHelp:true,signals:[{code:'E005',message:'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.'}]};
 
-    const {errors,warnings}=runValidators({sourceCharCount:ex.charCount,llmData:llm.data,detectorResult:detector,contactInfo:contact});
+    // --- Consistency audit (LLM call #2) + Route A referentie-verrijking ---
+    let consistency = null;
+    const disableAudit = String(process.env.DISABLE_CONSISTENCY_AUDIT || '').trim() === '1';
+    if (!disableAudit && timeLeftOk()) {
+      try {
+        const auditInstructions = buildAuditInstructions();
+        const auditInput = buildAuditInput({
+          sourceText: ex.text,
+          title: llm.data?.title || '',
+          intro: llm.data?.intro || '',
+          body: llm.data?.body || ''
+        });
+
+        const auditModel = process.env.OPENAI_AUDIT_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
+        const audit = await generateStructured({
+          apiKey,
+          instructions: auditInstructions,
+          input: auditInput,
+          model: auditModel,
+          retryOnce: true,
+          schema: AUDIT_SCHEMA
+        });
+
+        if (audit.ok) {
+          // Route A: lokale referentielijst toepassen (deterministisch)
+          const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
+          consistency = applyReferenceRulesToAudit(audit.data, ref.entities);
+        } else {
+          consistency = { ok: false, issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
+        }
+      } catch (_) {
+        consistency = { ok: false, issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
+      }
+    }
+
+    if(!timeLeftOk()) return {ok:false,errorCode:'E005',techHelp:true,signals:[{code:'E005',message:'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.'}]};
+
+    const {errors,warnings}=runValidators({
+      sourceCharCount:ex.charCount,
+      llmData:llm.data,
+      detectorResult:detector,
+      contactInfo:contact,
+      consistency
+    });
     if(errors.length>0){
       safeLog(`error_code:${errors[0].code}`);
       return {ok:false,errorCode:errors[0].code,techHelp:errors[0].code==='E005'||errors[0].code==='W010',signals:errors};
     }
 
-    const out=buildOutput({llmData:llm.data,signals:warnings,contactLines:contact.found?contact.lines:[]});
+    // Als audit uitstaat, consistency blijft null en wordt sectie niet getoond.
+    // Als audit faalde, tonen we een korte melding onder CONSISTENTIECHECK.
+    const out=buildOutput({
+      llmData:llm.data,
+      signals:warnings,
+      contactLines:contact.found?contact.lines:[],
+      consistency
+    });
     await fs.writeFile(outputPath,out,'utf-8');
     return {ok:true,signals:warnings};
   }catch(_){
