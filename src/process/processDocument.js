@@ -10,7 +10,6 @@ const { loadStylebookText } = require('./stylebookLoader');
 const { runValidators } = require('./runValidators');
 const { buildOutput } = require('./outputBuilder');
 
-const { buildInstructions, buildInput } = require('../llm/promptBuilder');
 const { generateStructured } = require('../llm/openaiClient');
 
 const { buildAuditInstructions, buildAuditInput } = require('../llm/auditPromptBuilder');
@@ -25,6 +24,61 @@ function safeErrStr(err) {
   const name = String(err?.name || 'Error');
   const msg = String(err?.message || '').replace(/\s+/g, ' ').trim();
   return `${name}:${msg.slice(0, 240)}`;
+}
+
+function resolveFn(mod, name) {
+  if (!mod) return null;
+
+  // 1) CommonJS: module.exports = { buildInstructions, buildInput }
+  if (typeof mod[name] === 'function') return mod[name];
+
+  // 2) ESM-ish interop: module.exports = { default: { buildInstructions, buildInput } }
+  if (typeof mod.default?.[name] === 'function') return mod.default[name];
+
+  // 3) module.exports = function () {} (alleen voor buildInstructions/buildInput is dat onwaarschijnlijk,
+  // maar we ondersteunen het voor compatibiliteit)
+  if (typeof mod === 'function' && name === 'buildInstructions') return mod;
+
+  return null;
+}
+
+// Fallbacks (identiek aan jullie oorspronkelijke src/llm/promptBuilder.js)
+function defaultBuildInstructions({ stylebookText }) {
+  const style = stylebookText ? `\n\nSTIJLBOEK:\n${stylebookText}\n` : '';
+  return [
+    'Je herschrijft een hyperlokaal persbericht naar een conceptnieuwsbericht voor De Limburger.',
+    'Gebruik alleen informatie uit de bron. Verzinnen is niet toegestaan.',
+    'Schrijf in B1, neutraal, zonder marketingtaal.',
+    'Citaten blijven letterlijk en worden toegeschreven.',
+    'Aanhalingstekens: gebruik Nederlandse typografische aanhalingstekens: „open” en ”sluit”. Gebruik geen ".',
+    'Waarom en Hoe vul je alleen in als dat letterlijk in de bron staat.',
+    'INTRO-regel: de intro bestaat uit precies 2 zinnen. Maximaal 20 woorden per zin.',
+    'Geef ALLEEN geldige JSON terug conform het schema. Geen extra tekst.'
+  ].join('\n') + style;
+}
+
+function defaultBuildInput({ sourceText }) {
+  return ['BRONTEKST:', String(sourceText || '')].join('\n\n');
+}
+
+// PromptBuilder import (met compat-resolutie)
+let buildInstructions;
+let buildInput;
+try {
+  const promptBuilderMod = require('../llm/promptBuilder');
+  buildInstructions = resolveFn(promptBuilderMod, 'buildInstructions') || defaultBuildInstructions;
+  buildInput = resolveFn(promptBuilderMod, 'buildInput') || defaultBuildInput;
+
+  // Log alleen “welke route”; geen inhoud.
+  const usingFallback =
+    buildInstructions === defaultBuildInstructions || buildInput === defaultBuildInput;
+  safeLog(`promptBuilder_resolved:${usingFallback ? 'fallback' : 'module'}`);
+} catch (err) {
+  // Als de module niet laadt, val terug i.p.v. crash.
+  safeLog(`promptBuilder_load_failed:${safeErrStr(err)}`);
+  console.error('promptBuilder_load_failed:', err?.stack || err);
+  buildInstructions = defaultBuildInstructions;
+  buildInput = defaultBuildInput;
 }
 
 async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
@@ -54,9 +108,9 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
     const detector = detectSecondPressRelease(ex.rawText);
     const contact = detectContactBlock(ex.rawText);
-
     const stylebookText = await loadStylebookText();
 
+    // MAIN LLM call
     const instructions = buildInstructions({ stylebookText });
     const input = buildInput({ sourceText: ex.text });
 
@@ -96,7 +150,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       try {
         safeLog('audit_status:started');
 
-        // 1) Deterministische labels (bron & concept)
+        // Deterministische labels (bron & concept)
         const sourceLabeled = labelSourceText(ex.rawText);
         const conceptLabeled = labelConceptText({
           title: llm.data?.title || '',
@@ -106,7 +160,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
         const allowedLabels = [...sourceLabeled.labels, ...conceptLabeled.labels];
 
-        // 2) Audit prompt met gelabelde teksten
+        // Audit prompt met gelabelde teksten
         const auditInstructions = buildAuditInstructions();
         const auditInput = buildAuditInput({
           labeledSourceText: sourceLabeled.labeledText,
@@ -134,10 +188,10 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
           safeLog(`audit_status:ok issues=${issues.length} modelOk=${modelOk}`);
 
+          // Als model ok=false maar wél issues: beschouw als bruikbaar
           if (!modelOk && issues.length === 0) {
             consistency = { ok: false, errorCode: 'AUDIT_NOT_OK', issues: [], stats };
           } else {
-            // Forceer ok=true downstream
             const normalizedAudit = { ok: true, issues, stats };
 
             // Route A: referentielijst toepassen
@@ -156,7 +210,6 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
           consistency = { ok: false, errorCode: ec, issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
         }
       } catch (err) {
-        // audit mag falen zonder het hele proces omver te trekken
         safeLog(`audit_status:failed errorCode=EXCEPTION ${safeErrStr(err)}`);
         console.error('audit_exception:', err?.stack || err);
         consistency = { ok: false, errorCode: 'EXCEPTION', issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
@@ -190,25 +243,16 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       };
     }
 
-    let out;
-    try {
-      out = buildOutput({
-        llmData: llm.data,
-        signals: warnings,
-        contactLines: contact.found ? contact.lines : [],
-        consistency
-      });
-    } catch (err) {
-      // Dit is een veelvoorkomende bron van W010: formatter/renderer errors
-      safeLog(`buildOutput_exception:${safeErrStr(err)}`);
-      console.error('buildOutput_exception:', err?.stack || err);
-      throw err;
-    }
+    const out = buildOutput({
+      llmData: llm.data,
+      signals: warnings,
+      contactLines: contact.found ? contact.lines : [],
+      consistency
+    });
 
     await fs.writeFile(outputPath, out, 'utf-8');
     return { ok: true, signals: warnings };
   } catch (err) {
-    // Dit is de W010 die je in de UI ziet.
     safeLog(`error_code:W010 ${safeErrStr(err)}`);
     console.error('processDocument_exception:', err?.stack || err);
 
