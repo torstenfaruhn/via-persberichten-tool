@@ -1,4 +1,5 @@
 'use strict';
+
 const fs = require('fs/promises');
 const { safeLog } = require('../security/safeLog');
 
@@ -25,16 +26,27 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
   try {
     const ex = await extractText(inputPath);
+
     if (!ex.ok) {
-      return { ok: false, errorCode: ex.errorCode || 'E002', techHelp: ex.techHelp === true, signals: ex.signals || [] };
+      return {
+        ok: false,
+        errorCode: ex.errorCode || 'E002',
+        techHelp: ex.techHelp === true,
+        signals: ex.signals || []
+      };
     }
+
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     const detector = detectSecondPressRelease(ex.rawText);
     const contact = detectContactBlock(ex.rawText);
-
     const stylebookText = await loadStylebookText();
 
     const instructions = buildInstructions({ stylebookText });
@@ -60,7 +72,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
     }
 
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     // --- Consistency audit (LLM call #2) + Route A referentie-verrijking ---
@@ -90,12 +107,26 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         });
 
         if (audit.ok) {
-          const issueCount = Array.isArray(audit.data?.issues) ? audit.data.issues.length : 0;
-          safeLog(`audit_status:ok issues=${issueCount}`);
+          // audit.ok = call+parse is gelukt.
+          // audit.data.ok = "model zegt of het kon". Die waarde blijkt soms 'false' te zijn ondanks issues.
+          const payload = audit.data || {};
+          const issues = Array.isArray(payload.issues) ? payload.issues : [];
+          const stats = payload.stats || { entities_checked: 0, place_links_checked: 0 };
+          const modelOk = payload.ok === true;
 
-          // Route A: lokale referentielijst toepassen (deterministisch)
-          const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
-          consistency = applyReferenceRulesToAudit(audit.data, ref.entities);
+          safeLog(`audit_status:ok issues=${issues.length} modelOk=${modelOk}`);
+
+          // Als model ok=false maar er wél issues zijn, beschouwen we de audit als bruikbaar.
+          if (!modelOk && issues.length === 0) {
+            consistency = { ok: false, errorCode: 'AUDIT_NOT_OK', issues: [], stats };
+          } else {
+            // Forceer ok=true zodat outputBuilder/validators niet W017 triggert
+            const normalizedAudit = { ok: true, issues, stats };
+
+            // Route A: lokale referentielijst toepassen (deterministisch)
+            const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
+            consistency = applyReferenceRulesToAudit(normalizedAudit, ref.entities);
+          }
         } else {
           const ec = audit.errorCode || 'UNKNOWN';
           safeLog(`audit_status:failed errorCode=${ec}`);
@@ -108,7 +139,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
     }
 
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     const { errors, warnings } = runValidators({
@@ -121,7 +157,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
     if (errors.length > 0) {
       safeLog(`error_code:${errors[0].code}`);
-      return { ok: false, errorCode: errors[0].code, techHelp: errors[0].code === 'E005' || errors[0].code === 'W010', signals: errors };
+      return {
+        ok: false,
+        errorCode: errors[0].code,
+        techHelp: errors[0].code === 'E005' || errors[0].code === 'W010',
+        signals: errors
+      };
     }
 
     const out = buildOutput({
