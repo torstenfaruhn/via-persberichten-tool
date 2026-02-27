@@ -1,7 +1,6 @@
 'use strict';
 
 function buildAuditInstructions() {
-  // System-level: strikt, geen extra tekst, geen fact-check buiten input.
   return [
     'Je bent een auditmodule die inconsistenties detecteert in eigennamen en plaatskoppelingen.',
     'Je gebruikt uitsluitend de gegeven BRONTEKST en het CONCEPT.',
@@ -12,7 +11,6 @@ function buildAuditInstructions() {
 }
 
 function buildAuditInput({ sourceText, title, intro, body }) {
-  // User-level: taak, normalisatieregels, evidence, rubric en (kleine) voorbeelden.
   const example1 = {
     ok: true,
     issues: [
@@ -59,6 +57,11 @@ function buildAuditInput({ sourceText, title, intro, body }) {
     'TAK',
     'Analyseer BRONTEKST en CONCEPT op inconsistenties.',
     '',
+    'BELANGRIJK OVER "ok"',
+    '- Zet "ok" op true zodra je de analyse kunt uitvoeren.',
+    '- Zet "ok" alleen op false als BRONTEKST of CONCEPT ontbreekt of te leeg is om te analyseren.',
+    '- Zet "ok" NIET op false alleen omdat je onzeker bent; gebruik daarvoor "confidence" en "severity".',
+    '',
     'A) Schrijfwijze-inconsistenties (eigennamen)',
     '- Rapporteer een issue als dezelfde entiteit binnen BRONTEKST+CONCEPT meerdere schrijfwijzen heeft die waarschijnlijk naar dezelfde entiteit verwijzen.',
     '- Flag alleen als er minstens 2 verschillende varianten voorkomen.',
@@ -69,9 +72,9 @@ function buildAuditInput({ sourceText, title, intro, body }) {
     '',
     'NORMALISATIE (voor matching; output behoudt originele varianten)',
     '- Case-insensitive vergelijken; diacritics negeren (é~e); meerdere spaties samenvoegen.',
-    '- Negeer leidende lidwoorden voor entiteiten: de/het/\'t.',
+    "- Negeer leidende lidwoorden voor entiteiten: de/het/'t.",
     '- Rechtsvorm-varianten als gelijk behandelen: B.V.~BV, N.V.~NV.',
-    '- Interpunctie-/hyphen-varianten als gelijk behandelen (\'-\', \"–\").',
+    '- Interpunctie-/hyphen-varianten als gelijk behandelen ("-", "–").',
     '- Personen: initialen vs. voornaam niet automatisch mergen tenzij context heel duidelijk is (dan severity laag/middel).',
     '',
     'WAT TELT ALS PLAATSKOPPELING (sterke patronen)',
