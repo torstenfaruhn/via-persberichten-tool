@@ -105,4 +105,16 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   // Daarna BRON / CONTACT
   parts.push('BRON');
-  parts.push(bron
+  parts.push(bron);
+
+  if (Array.isArray(contactLines) && contactLines.length > 0) {
+    parts.push('');
+    parts.push('CONTACT (niet voor publicatie)');
+    parts.push(contactLines.join('\n'));
+  }
+
+  parts.push('');
+  return parts.join('\n');
+}
+
+module.exports = { buildOutput };
