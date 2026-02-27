@@ -12,7 +12,6 @@ function truncate(s, n) {
 }
 
 function formatConsistencyCheck(consistency) {
-  // Als audit uit staat (consistency = null), tonen we géén sectie.
   if (!consistency) return [];
 
   const ok = Boolean(consistency?.ok);
@@ -63,23 +62,12 @@ function formatConsistencyCheck(consistency) {
 }
 
 /**
- * Bouwt het output-document.
- * Output (plain):
- *   titel
- *   (lege regel)
- *   intro
- *   (lege regel)
- *   body
- *   (lege regel)
- *   SIGNALEN
- *   ...
- *   (lege regel)
- *   CONSISTENTIECHECK
- *   ...
- *   (lege regel)
- *   BRON
- *   ...
- *   CONTACT (optioneel)
+ * Output document:
+ * titel + intro + body (plain)
+ * daarna: SIGNALEN
+ * daarna: CONSISTENTIECHECK (logischer omdat W016 daar naar verwijst)
+ * daarna: BRON
+ * daarna: CONTACT
  */
 function buildOutput({ llmData, signals, contactLines, consistency }) {
   const title = String(llmData?.title || '').trim();
@@ -97,26 +85,25 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   if (body) parts.push(body);
 
-  // Altijd netjes afsluiten met een lege regel vóór de meta-secties, als er inhoud was.
   if (parts.length > 0) parts.push('');
 
-  // SIGNALEN eerst
+  // SIGNALEN eerst (hier wordt ook naar CONSISTENTIECHECK verwezen)
   parts.push('SIGNALEN');
   parts.push(bullets(signals));
   parts.push('');
 
-  // CONSISTENTIECHECK direct onder SIGNALEN (zoals gevraagd)
+  // Consistentiecheck direct onder SIGNALEN
   const cc = formatConsistencyCheck(consistency);
   if (cc.length > 0) {
     parts.push(...cc);
     parts.push('');
   }
 
-  // BRON daarna
+  // BRON
   parts.push('BRON');
   parts.push(bron);
 
-  // CONTACT optioneel
+  // CONTACT
   if (Array.isArray(contactLines) && contactLines.length > 0) {
     parts.push('');
     parts.push('CONTACT (niet voor publicatie)');
