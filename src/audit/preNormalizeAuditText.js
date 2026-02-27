@@ -69,7 +69,6 @@ function buildKnownPlaces({ referenceEntities, title, intro, body }) {
   const combined = [title, intro, body].filter(Boolean).join('\n');
   for (const p of extractPlacesFromTextHeuristic(combined)) places.add(p);
 
-  // Normaliseer: strip dubbele spaties
   const cleaned = Array.from(places)
     .map((p) => normalizeWhitespace(p).trim())
     .filter(Boolean);
@@ -88,40 +87,25 @@ function applyImplicitPlaceToExplicitIn(text, knownPlaces) {
     return { text: out, replacements: 0 };
   }
 
-  // We vervangen alleen als de plaats direct na een capitalized phrase staat:
-  //   "<CAP...> <PLAATS>" -> "<CAP...> in <PLAATS>"
-  //
-  // Waarbij CAP... = 1-4 woorden met hoofdletters (om bv. "Limburgs Museum Venlo" te pakken).
-  //
-  // We vermijden gevallen met "..., <PLAATS>" en "(<PLAATS>)" omdat dat al expliciet genoeg is.
   for (const place of knownPlaces) {
     const pEsc = escapeRegex(place);
 
     const re = new RegExp(
-      // group1: 1-4 woorden met hoofdletters/karakters die vaak in namen zitten
-      // gevolgd door spatie + place
       `\\b([A-Z][\\p{L}0-9&'’.-]+(?:\\s+[A-Z][\\p{L}0-9&'’.-]+){0,3})\\s+(${pEsc})\\b`,
       'gu'
     );
 
-    out = out.replace(re, (match, g1, g2, offset, full) => {
+    out = out.replace(re, (match, g1, g2) => {
       const left = String(g1 || '');
       const right = String(g2 || '');
 
       // Als de linkerkant al eindigt op "in" of "te", dan niets doen.
       if (/\b(in|te)\s*$/i.test(left)) return match;
 
-      // Als direct vóór de plaats een komma of '(' staat in de originele match, dan niets doen.
-      // (We willen "X, Heerlen" of "X (Heerlen)" niet veranderen.)
-      const idxPlaceStart = match.lastIndexOf(right);
-      const charBeforePlace = idxPlaceStart > 0 ? match[idxPlaceStart - 1] : '';
-      if (charBeforePlace === ',' || charBeforePlace === '(') return match;
-
       // Als de linkerkant eindigt met ',' of '(' dan niets doen.
       if (/[,(]$/.test(left.trim())) return match;
 
-      // Voorkom dat we "Gemeente Heerlen" als "Gemeente in Heerlen" gaan behandelen in audit,
-      // tenzij je dat wél wil. Conservatief: skip als left exact "Gemeente" / "gemeente".
+      // Conservatief: voorkom "Gemeente Heerlen" -> "Gemeente in Heerlen"
       if (/^gemeente$/i.test(left.trim())) return match;
 
       replacements += 1;
