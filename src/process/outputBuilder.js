@@ -11,6 +11,47 @@ function truncate(s, n) {
   return t.length <= n ? t : (t.slice(0, n - 1) + '…');
 }
 
+function pad2(n) {
+  const x = Number(n);
+  if (!Number.isFinite(x) || x < 0) return '00';
+  return String(x).padStart(2, '0');
+}
+
+function normalizeWhitespace(s) {
+  return String(s || '').replace(/\s+/g, ' ').trim();
+}
+
+/**
+ * Normaliseert locators naar scanbare labels:
+ * - bron:alinea2:zin7           -> [BRON A02 Z07]
+ * - concept:titel               -> [CONCEPT TITEL]
+ * - concept:intro:zin3          -> [CONCEPT INTRO Z03]
+ * - concept:body:alinea2:zin7   -> [CONCEPT A02 Z07]
+ * Als locator al in [..] staat, laten we hem staan.
+ */
+function formatLocator(raw) {
+  const s = String(raw || '').trim();
+  if (!s) return '';
+
+  if (s.startsWith('[') && s.endsWith(']')) return s;
+
+  // legacy patterns
+  let m = s.match(/^bron:alinea(\d+):zin(\d+)$/i);
+  if (m) return `[BRON A${pad2(m[1])} Z${pad2(m[2])}]`;
+
+  m = s.match(/^concept:titel$/i);
+  if (m) return `[CONCEPT TITEL]`;
+
+  m = s.match(/^concept:intro:zin(\d+)$/i);
+  if (m) return `[CONCEPT INTRO Z${pad2(m[1])}]`;
+
+  m = s.match(/^concept:body:alinea(\d+):zin(\d+)$/i);
+  if (m) return `[CONCEPT A${pad2(m[1])} Z${pad2(m[2])}]`;
+
+  // If audit already emitted something else, keep as-is.
+  return s;
+}
+
 function formatConsistencyCheck(consistency) {
   if (!consistency) return [];
 
@@ -44,17 +85,44 @@ function formatConsistencyCheck(consistency) {
 
     const locs = Array.isArray(it?.evidence)
       ? it.evidence
-          .map((e) => String(e?.locator || '').trim())
+          .map((e) => formatLocator(e?.locator))
           .filter(Boolean)
-          .slice(0, 3)
+          .slice(0, 4)
           .join(' · ')
       : '';
 
     const sev = String(it?.severity || '').trim() || '-';
-    const note = truncate(String(it?.note || '').trim(), 140) || '-';
+    const note = truncate(String(it?.note || '').trim(), 160) || '-';
 
     const esc = (x) => String(x || '').replace(/\|/g, '\\|');
     lines.push(`| ${esc(type)} | ${esc(ent)} | ${esc(varOrPlace)} | ${esc(locs)} | ${esc(sev)} | ${esc(note)} |`);
+  }
+
+  // BRONINDEX (vindplaatsen): unieke locators -> exacte zin/snippet
+  lines.push('');
+  lines.push('BRONINDEX (vindplaatsen)');
+
+  const seen = new Set();
+  const ordered = [];
+
+  for (const it of issues) {
+    const ev = Array.isArray(it?.evidence) ? it.evidence : [];
+    for (const e of ev) {
+      const loc = formatLocator(e?.locator);
+      if (!loc || seen.has(loc)) continue;
+      seen.add(loc);
+      ordered.push({ loc, snippet: normalizeWhitespace(e?.snippet) });
+    }
+  }
+
+  if (ordered.length === 0) {
+    lines.push('- Geen vindplaatsen beschikbaar.');
+    return lines;
+  }
+
+  for (const row of ordered) {
+    const sn = row.snippet ? row.snippet : '';
+    lines.push(`${row.loc} ${sn}`.trimEnd());
   }
 
   return lines;
@@ -70,7 +138,7 @@ function formatConsistencyCheck(consistency) {
  *   body
  * Daarna:
  *   SIGNALEN
- *   CONSISTENTIECHECK (optioneel)
+ *   CONSISTENTIECHECK (optioneel, incl. BRONINDEX)
  *   BRON/CONTACT
  */
 function buildOutput({ llmData, signals, contactLines, consistency }) {
@@ -96,7 +164,7 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
   parts.push(bullets(signals));
   parts.push('');
 
-  // CONSISTENTIECHECK onder SIGNALEN
+  // CONSISTENTIECHECK onder SIGNALEN (incl. BRONINDEX)
   const cc = formatConsistencyCheck(consistency);
   if (cc.length > 0) {
     parts.push(...cc);
