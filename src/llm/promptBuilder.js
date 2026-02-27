@@ -11,7 +11,6 @@ function buildAuditInstructions() {
 }
 
 function buildAuditInput({ labeledSourceText, labeledConceptText }) {
-  // Few-shot voorbeeld met labels (kort houden om tokens te sparen)
   const example = {
     ok: true,
     issues: [
@@ -37,10 +36,10 @@ function buildAuditInput({ labeledSourceText, labeledConceptText }) {
     'TAK',
     'Analyseer BRON_GELABELD en CONCEPT_GELABELD op inconsistenties.',
     '',
-    'BELANGRIJK OVER "ok"',
-    '- Zet "ok" op true zodra je de analyse kunt uitvoeren.',
-    '- Zet "ok" alleen op false als BRON_GELABELD of CONCEPT_GELABELD ontbreekt of te leeg is om te analyseren.',
-    '- Zet "ok" NIET op false alleen omdat je onzeker bent; gebruik daarvoor "confidence" en "severity".',
+    'BELANGRIJK: "ok" MOET true zijn',
+    '- Zet "ok" altijd op true als BRON_GELABELD en CONCEPT_GELABELD aanwezig zijn.',
+    '- Zet "ok" alleen op false als één van beide blokken ontbreekt of vrijwel leeg is (dus echt niet te analyseren).',
+    '- Zet "ok" NOOIT op false omdat je onzeker bent; gebruik daarvoor "confidence" en "severity".',
     '',
     'A) Schrijfwijze-inconsistenties (eigennamen)',
     '- Rapporteer een issue als dezelfde entiteit meerdere schrijfwijzen heeft die waarschijnlijk naar dezelfde entiteit verwijzen.',
@@ -63,7 +62,7 @@ function buildAuditInput({ labeledSourceText, labeledConceptText }) {
     '',
     'EVIDENCE & LOCATORS (ZEER BELANGRIJK)',
     '- "locator" moet EXACT een bestaand label zijn uit de tekst, inclusief de vierkante haken.',
-    '- Voor bron gebruik je labels zoals: [BRON A02 Z07]. Voor concept: [CONCEPT INTRO Z01], [CONCEPT BODY A01 Z03], etc.',
+    '- Voor bron: [BRON A02 Z07]. Voor concept: [CONCEPT INTRO Z01], [CONCEPT BODY A01 Z03], etc.',
     '- Verzin NOOIT je eigen locator-formaat en schrijf geen "bron:alinea..".',
     '- Voeg per issue minimaal 2 evidence-items toe als er 2 conflicterende vormen/plaatsen zijn.',
     '- "snippet" max 120 tekens.',
