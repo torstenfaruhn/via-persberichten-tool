@@ -3,15 +3,16 @@
 function buildAuditInstructions() {
   return [
     'Je bent een auditmodule die inconsistenties detecteert in eigennamen en plaatskoppelingen.',
-    'Je gebruikt uitsluitend de gegeven BRONTEKST en het CONCEPT.',
+    'Je gebruikt uitsluitend de gegeven BRON_GELABELD en CONCEPT_GELABELD.',
     'Je corrigeert of herschrijft niets en introduceert geen nieuwe feiten.',
     'Je bepaalt niet wat waar is; je signaleert alleen interne conflicten.',
     'Geef ALLEEN geldige JSON terug conform het schema. Geen extra tekst.'
   ].join('\n');
 }
 
-function buildAuditInput({ sourceText, title, intro, body }) {
-  const example1 = {
+function buildAuditInput({ labeledSourceText, labeledConceptText }) {
+  // Few-shot voorbeeld met labels (kort houden om tokens te sparen)
+  const example = {
     ok: true,
     issues: [
       {
@@ -21,8 +22,8 @@ function buildAuditInput({ sourceText, title, intro, body }) {
         variants: ['Glaspaleis', 'het Glaspaleis'],
         places: ['Heerlen', 'Simpelveld'],
         evidence: [
-          { where: 'bron', locator: 'bron:alinea2:zin1', snippet: '… Glaspaleis in Heerlen …' },
-          { where: 'bron', locator: 'bron:alinea4:zin2', snippet: '… in het Glaspaleis te Simpelveld …' }
+          { where: 'bron', locator: '[BRON A02 Z07]', snippet: 'De lezing is … Glaspaleis in Heerlen.' },
+          { where: 'bron', locator: '[BRON A02 Z10]', snippet: 'De filmzaal van het Glaspaleis in Simpelveld …' }
         ],
         severity: 'hoog',
         confidence: 'hoog',
@@ -32,64 +33,21 @@ function buildAuditInput({ sourceText, title, intro, body }) {
     stats: { entities_checked: 0, place_links_checked: 0 }
   };
 
-  const example2 = {
-    ok: true,
-    issues: [
-      {
-        type: 'schrijfwijze',
-        entity_canonical: 'Zuyderland Medisch Centrum',
-        entity_type: 'organisatie',
-        variants: ['Zuyderland Medisch Centrum', 'Zuyderland Medisch centrum'],
-        places: [],
-        evidence: [
-          { where: 'concept', locator: 'concept:intro:zin1', snippet: 'Zuyderland Medisch centrum meldt …' },
-          { where: 'concept', locator: 'concept:body:alinea2:zin1', snippet: 'Volgens Zuyderland Medisch Centrum …' }
-        ],
-        severity: 'middel',
-        confidence: 'hoog',
-        note: 'Waarschijnlijkzelfde organisatie, maar wisselende kapitalisatie.'
-      }
-    ],
-    stats: { entities_checked: 0, place_links_checked: 0 }
-  };
-
-  // Extra voorbeeld: impliciete koppeling "ENTITEIT PLAATS" zonder voorzetsel
-  const example3 = {
-    ok: true,
-    issues: [
-      {
-        type: 'plaatskoppeling',
-        entity_canonical: 'Cultuurhuis',
-        entity_type: 'locatie',
-        variants: ['Cultuurhuis Heerlen', 'Cultuurhuis'],
-        places: ['Heerlen', 'Simpelveld'],
-        evidence: [
-          { where: 'concept', locator: 'concept:body:alinea1:zin1', snippet: '… in het Cultuurhuis Heerlen …' },
-          { where: 'concept', locator: 'concept:body:alinea2:zin1', snippet: '… in het Cultuurhuis in Simpelveld …' }
-        ],
-        severity: 'hoog',
-        confidence: 'middel',
-        note: 'Impliciete plaatskoppeling (“ENTITEIT PLAATS”) conflicteert met expliciete plaatskoppeling.'
-      }
-    ],
-    stats: { entities_checked: 0, place_links_checked: 0 }
-  };
-
   return [
     'TAK',
-    'Analyseer BRONTEKST en CONCEPT op inconsistenties.',
+    'Analyseer BRON_GELABELD en CONCEPT_GELABELD op inconsistenties.',
     '',
     'BELANGRIJK OVER "ok"',
     '- Zet "ok" op true zodra je de analyse kunt uitvoeren.',
-    '- Zet "ok" alleen op false als BRONTEKST of CONCEPT ontbreekt of te leeg is om te analyseren.',
+    '- Zet "ok" alleen op false als BRON_GELABELD of CONCEPT_GELABELD ontbreekt of te leeg is om te analyseren.',
     '- Zet "ok" NIET op false alleen omdat je onzeker bent; gebruik daarvoor "confidence" en "severity".',
     '',
     'A) Schrijfwijze-inconsistenties (eigennamen)',
-    '- Rapporteer een issue als dezelfde entiteit binnen BRONTEKST+CONCEPT meerdere schrijfwijzen heeft die waarschijnlijk naar dezelfde entiteit verwijzen.',
+    '- Rapporteer een issue als dezelfde entiteit meerdere schrijfwijzen heeft die waarschijnlijk naar dezelfde entiteit verwijzen.',
     '- Flag alleen als er minstens 2 verschillende varianten voorkomen.',
     '',
     'B) Plaatskoppeling-inconsistenties',
-    '- Rapporteer een issue als dezelfde entiteit in hetzelfde document gekoppeld wordt aan meerdere plaatsnamen.',
+    '- Rapporteer een issue als dezelfde entiteit gekoppeld wordt aan meerdere plaatsnamen in hetzelfde document.',
     '- Flag alleen als er minstens 2 verschillende plaatsen voorkomen.',
     '',
     'NORMALISATIE (voor matching; output behoudt originele varianten)',
@@ -101,44 +59,25 @@ function buildAuditInput({ sourceText, title, intro, body }) {
     '',
     'WAT TELT ALS PLAATSKOPPELING (sterke patronen)',
     '- “{ENTITEIT} in {PLAATS}”, “{ENTITEIT} te {PLAATS}”, “{ENTITEIT} ({PLAATS})”, “{ENTITEIT}, {PLAATS}”.',
-    '- Adresregel met plaatsnaam mag meewegen als de entiteit in dezelfde zin/regel staat.',
     '- Zwakke patronen (lager vertrouwen): “vanuit {PLAATS}”, “regio {PLAATS}”.',
     '',
-    'EXTRA GUARDRAIL: impliciete plaatskoppeling zonder voorzetsel',
-    '- Behandel ook patronen van de vorm “{ENTITEIT} {PLAATS}” als een plaatskoppeling,',
-    '  ALS {PLAATS} een plaatsnaam is (typisch met hoofdletter) en de combinatie duidelijk een locatie aanduidt.',
-    '  Voorbeelden: “Cultuurhuis Heerlen”, “MECC Maastricht”, “Limburgs Museum Venlo”.',
-    '- Als dezelfde entiteit óók elders expliciet aan een andere plaats gekoppeld wordt, rapporteer dit als plaatskoppeling-inconsistentie.',
-    '',
-    'EVIDENCE & LOCATORS',
-    '- Voeg per issue evidence-items toe die de conflicterende vormen/plaatsen laten zien (minimaal 2 als er 2 conflicterende vormen/plaatsen zijn).',
-    '- Locator-formaat: bron:alinea{n}:zin{m} en concept:titel, concept:intro:zin{m}, concept:body:alinea{n}:zin{m}.',
-    '- Snippet is max 120 tekens.',
+    'EVIDENCE & LOCATORS (ZEER BELANGRIJK)',
+    '- "locator" moet EXACT een bestaand label zijn uit de tekst, inclusief de vierkante haken.',
+    '- Voor bron gebruik je labels zoals: [BRON A02 Z07]. Voor concept: [CONCEPT INTRO Z01], [CONCEPT BODY A01 Z03], etc.',
+    '- Verzin NOOIT je eigen locator-formaat en schrijf geen "bron:alinea..".',
+    '- Voeg per issue minimaal 2 evidence-items toe als er 2 conflicterende vormen/plaatsen zijn.',
+    '- "snippet" max 120 tekens.',
     '',
     'SEVERITY/CONFIDENCE (rubric)',
-    '- Plaatskoppeling: hoog als dezelfde entiteit met sterke patronen aan 2+ verschillende plaatsen hangt. Middel als 1 link ambigue is.',
-    '- Schrijfwijze: hoog bij duidelijke spelfout/andere naam; middel bij kapitalisatie/stijl; laag bij twijfelgevallen.',
+    '- Plaatskoppeling: hoog als dezelfde entiteit met sterke patronen aan 2+ verschillende plaatsen hangt.',
+    '- Schrijfwijze: middel/hoog bij echte inconsistentie, laag bij twijfelgevallen.',
     '',
-    'VOORBEELD (plaatskoppeling – expliciet)',
-    JSON.stringify(example1, null, 2),
+    'VOORBEELD OUTPUT (met labels als locator)',
+    JSON.stringify(example, null, 2),
     '',
-    'VOORBEELD (schrijfwijze)',
-    JSON.stringify(example2, null, 2),
+    String(labeledSourceText || 'BRON_GELABELD:\n'),
     '',
-    'VOORBEELD (plaatskoppeling – impliciet ENTITEIT PLAATS)',
-    JSON.stringify(example3, null, 2),
-    '',
-    'BRONTEKST:',
-    String(sourceText || ''),
-    '',
-    'CONCEPT_TITEL:',
-    String(title || ''),
-    '',
-    'CONCEPT_INTRO:',
-    String(intro || ''),
-    '',
-    'CONCEPT_BODY:',
-    String(body || '')
+    String(labeledConceptText || 'CONCEPT_GELABELD:\n')
   ].join('\n');
 }
 
