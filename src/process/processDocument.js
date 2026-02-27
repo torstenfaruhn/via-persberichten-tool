@@ -21,6 +21,12 @@ const { applyReferenceRulesToAudit } = require('../reference/applyReferenceRules
 
 const { labelSourceText, labelConceptText, sanitizeAuditIssues } = require('./labelText');
 
+function safeErrStr(err) {
+  const name = String(err?.name || 'Error');
+  const msg = String(err?.message || '').replace(/\s+/g, ' ').trim();
+  return `${name}:${msg.slice(0, 240)}`;
+}
+
 async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   const start = Date.now();
   const max = Number(maxSeconds || 360);
@@ -29,11 +35,21 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   try {
     const ex = await extractText(inputPath);
     if (!ex.ok) {
-      return { ok: false, errorCode: ex.errorCode || 'E002', techHelp: ex.techHelp === true, signals: ex.signals || [] };
+      return {
+        ok: false,
+        errorCode: ex.errorCode || 'E002',
+        techHelp: ex.techHelp === true,
+        signals: ex.signals || []
+      };
     }
 
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     const detector = detectSecondPressRelease(ex.rawText);
@@ -64,7 +80,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
     }
 
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     // --- Consistency audit (LLM call #2) + Route A referentie-verrijking + labels/index ---
@@ -75,7 +96,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       try {
         safeLog('audit_status:started');
 
-        // 1) Maak deterministische labels voor bron & concept
+        // 1) Deterministische labels (bron & concept)
         const sourceLabeled = labelSourceText(ex.rawText);
         const conceptLabeled = labelConceptText({
           title: llm.data?.title || '',
@@ -108,24 +129,22 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
           const stats = payload.stats || { entities_checked: 0, place_links_checked: 0 };
           const modelOk = payload.ok === true;
 
-          // Sanitize locators zodat ze altijd bestaande labels zijn (of evidence item verdwijnt)
+          // Sanitize locators → alleen bestaande labels
           const issues = sanitizeAuditIssues(issuesRaw, allowedLabels);
 
           safeLog(`audit_status:ok issues=${issues.length} modelOk=${modelOk}`);
 
-          // Als model ok=false maar er wél issues zijn, beschouwen we het als bruikbaar.
           if (!modelOk && issues.length === 0) {
             consistency = { ok: false, errorCode: 'AUDIT_NOT_OK', issues: [], stats };
           } else {
-            // Forceer ok=true downstream (anders W017) — we hebben immers een bruikbaar resultaat.
+            // Forceer ok=true downstream
             const normalizedAudit = { ok: true, issues, stats };
 
-            // Route A: lokale referentielijst toepassen (deterministisch)
+            // Route A: referentielijst toepassen
             const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
             consistency = applyReferenceRulesToAudit(normalizedAudit, ref.entities);
 
-            // 3) Voeg label->zin index toe voor UX 2.2 (BRONINDEX onder CONSISTENTIECHECK)
-            // (underscore: intern gebruik; niet uit LLM)
+            // UX 2.2: index label->zin voor BRONINDEX
             consistency._locatorIndex = {
               bron: sourceLabeled.labelToText,
               concept: conceptLabeled.labelToText
@@ -136,14 +155,21 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
           safeLog(`audit_status:failed errorCode=${ec}`);
           consistency = { ok: false, errorCode: ec, issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
         }
-      } catch (_) {
-        safeLog('audit_status:failed errorCode=EXCEPTION');
+      } catch (err) {
+        // audit mag falen zonder het hele proces omver te trekken
+        safeLog(`audit_status:failed errorCode=EXCEPTION ${safeErrStr(err)}`);
+        console.error('audit_exception:', err?.stack || err);
         consistency = { ok: false, errorCode: 'EXCEPTION', issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
       }
     }
 
     if (!timeLeftOk()) {
-      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
+      return {
+        ok: false,
+        errorCode: 'E005',
+        techHelp: true,
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
+      };
     }
 
     const { errors, warnings } = runValidators({
@@ -156,21 +182,42 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
     if (errors.length > 0) {
       safeLog(`error_code:${errors[0].code}`);
-      return { ok: false, errorCode: errors[0].code, techHelp: errors[0].code === 'E005' || errors[0].code === 'W010', signals: errors };
+      return {
+        ok: false,
+        errorCode: errors[0].code,
+        techHelp: errors[0].code === 'E005' || errors[0].code === 'W010',
+        signals: errors
+      };
     }
 
-    const out = buildOutput({
-      llmData: llm.data,
-      signals: warnings,
-      contactLines: contact.found ? contact.lines : [],
-      consistency
-    });
+    let out;
+    try {
+      out = buildOutput({
+        llmData: llm.data,
+        signals: warnings,
+        contactLines: contact.found ? contact.lines : [],
+        consistency
+      });
+    } catch (err) {
+      // Dit is een veelvoorkomende bron van W010: formatter/renderer errors
+      safeLog(`buildOutput_exception:${safeErrStr(err)}`);
+      console.error('buildOutput_exception:', err?.stack || err);
+      throw err;
+    }
 
     await fs.writeFile(outputPath, out, 'utf-8');
     return { ok: true, signals: warnings };
-  } catch (_) {
-    safeLog('error_code:W010');
-    return { ok: false, errorCode: 'W010', techHelp: true, signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }] };
+  } catch (err) {
+    // Dit is de W010 die je in de UI ziet.
+    safeLog(`error_code:W010 ${safeErrStr(err)}`);
+    console.error('processDocument_exception:', err?.stack || err);
+
+    return {
+      ok: false,
+      errorCode: 'W010',
+      techHelp: true,
+      signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }]
+    };
   }
 }
 
