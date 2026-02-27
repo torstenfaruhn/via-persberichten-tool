@@ -62,15 +62,12 @@ function formatConsistencyCheck(consistency) {
 }
 
 /**
- * Bouwt het output-document.
- * Wijziging: verwijdert de KOP/INTRO/BODY-tags en output nu "plain" tekst:
- *   titel
- *   (lege regel)
- *   intro
- *   (lege regel)
- *   body
- *   (lege regel)
- * Daarna blijven SIGNALEN/BRON/CONTACT zoals voorheen.
+ * Output document:
+ * titel + intro + body (plain)
+ * daarna: SIGNALEN
+ * daarna: CONSISTENTIECHECK (logischer omdat W016 daar naar verwijst)
+ * daarna: BRON
+ * daarna: CONTACT
  */
 function buildOutput({ llmData, signals, contactLines, consistency }) {
   const title = String(llmData?.title || '').trim();
@@ -80,7 +77,6 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   const parts = [];
 
-  // Geen tags meer: alleen de inhoud.
   if (title) parts.push(title);
   if (title && (intro || body)) parts.push('');
 
@@ -89,23 +85,25 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   if (body) parts.push(body);
 
-  // Altijd netjes afsluiten met een lege regel vóór de meta-secties, als er inhoud was.
   if (parts.length > 0) parts.push('');
 
-  // Consistentiecheck (voor SIGNALEN), zodat eindredactie direct context ziet.
+  // SIGNALEN eerst (hier wordt ook naar CONSISTENTIECHECK verwezen)
+  parts.push('SIGNALEN');
+  parts.push(bullets(signals));
+  parts.push('');
+
+  // Consistentiecheck direct onder SIGNALEN
   const cc = formatConsistencyCheck(consistency);
   if (cc.length > 0) {
     parts.push(...cc);
     parts.push('');
   }
 
-  // Meta-secties blijven ongewijzigd.
-  parts.push('SIGNALEN');
-  parts.push(bullets(signals));
-  parts.push('');
+  // BRON
   parts.push('BRON');
   parts.push(bron);
 
+  // CONTACT
   if (Array.isArray(contactLines) && contactLines.length > 0) {
     parts.push('');
     parts.push('CONTACT (niet voor publicatie)');
