@@ -1,43 +1,40 @@
 'use strict';
-const OpenAI=require('openai');
-const {LLM_SCHEMA}=require('./schema');
+const OpenAI = require('openai');
+const { LLM_SCHEMA } = require('./schema');
 
-function extractJsonText(resp){
-  if(!resp) return null;
-  if(typeof resp.output_text==='string'&&resp.output_text.trim()) return resp.output_text.trim();
-  const out=resp.output||[];
-  for(const item of out){
-    if(item.type==='message'&&Array.isArray(item.content)){
-      const t=item.content.find(c=>c.type==='output_text'||c.type==='text');
-      if(t&&typeof t.text==='string') return t.text.trim();
+function extractJsonText(resp) {
+  if (!resp) return null;
+
+  // JS SDK convenience property
+  if (typeof resp.output_text === 'string' && resp.output_text.trim()) return resp.output_text.trim();
+
+  const out = resp.output || [];
+  for (const item of out) {
+    if (item.type === 'message' && Array.isArray(item.content)) {
+      const t = item.content.find((c) => c.type === 'output_text' || c.type === 'text');
+      if (t && typeof t.text === 'string') return t.text.trim();
     }
   }
   return null;
 }
-function extractChatJsonText(resp){
-  const txt=resp?.choices?.[0]?.message?.content;
-  return (typeof txt==='string'&&txt.trim()) ? txt.trim() : null;
-}
-function safeParse(txt){
-  try{
-    const cleaned = normalizeJsonCandidate(txt);
-    return {ok:true,data:JSON.parse(cleaned)};
-  }catch(_){
-    return {ok:false};
-  }
+
+function extractChatJsonText(resp) {
+  const c = resp?.choices?.[0]?.message?.content;
+  if (typeof c === 'string' && c.trim()) return c.trim();
+  // Sommige SDK’s/varianten kunnen content als object leveren; maak het dan stringifybaar.
+  if (c && typeof c === 'object') return JSON.stringify(c);
+  return null;
 }
 
-function normalizeJsonCandidate(txt){
-  let s = (typeof txt==='string' ? txt : '').trim();
-  if(!s) return s;
+function normalizeJsonCandidate(txt) {
+  let s = (typeof txt === 'string' ? txt : '').trim();
+  if (!s) return s;
 
   // Strip markdown code fences
   if (s.startsWith('```')) {
     const lines = s.split(/\r?\n/);
-    // remove first fence line
-    lines.shift();
-    // remove last fence line if present
-    if (lines.length && lines[lines.length - 1].trim().startsWith('```')) lines.pop();
+    lines.shift(); // first fence
+    if (lines.length && lines[lines.length - 1].trim().startsWith('```')) lines.pop(); // last fence
     s = lines.join('\n').trim();
   }
 
@@ -47,215 +44,252 @@ function normalizeJsonCandidate(txt){
   const firstArr = s.indexOf('[');
   const lastArr = s.lastIndexOf(']');
 
-  // Prefer object if it looks valid
-  if(firstObj !== -1 && lastObj !== -1 && lastObj > firstObj){
-    return s.slice(firstObj, lastObj+1).trim();
+  if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
+    return s.slice(firstObj, lastObj + 1).trim();
   }
-  if(firstArr !== -1 && lastArr !== -1 && lastArr > firstArr){
-    return s.slice(firstArr, lastArr+1).trim();
+  if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
+    return s.slice(firstArr, lastArr + 1).trim();
   }
   return s;
 }
 
+function safeParse(txt) {
+  try {
+    const cleaned = normalizeJsonCandidate(txt);
+    return { ok: true, data: JSON.parse(cleaned) };
+  } catch (_) {
+    return { ok: false };
+  }
+}
 
-function isTypeError(err){return err instanceof TypeError || err?.name==='TypeError';}
-function getStatus(err){return Number(err?.status || err?.response?.status || err?.statusCode || 0);}
+function isTypeError(err) {
+  return err instanceof TypeError || err?.name === 'TypeError';
+}
+function getStatus(err) {
+  return Number(err?.status || err?.response?.status || err?.statusCode || 0);
+}
 
-async function callLLM({apiKey,instructions,input,model,schema}){
-  const client=new OpenAI({apiKey});
-  const m=model || 'gpt-4o-mini';
+async function callLLM({ apiKey, instructions, input, model, schema }) {
+  const client = new OpenAI({ apiKey });
+  const m = model || 'gpt-4o-mini';
   const sch = schema || LLM_SCHEMA;
 
   // Path A: Responses API (nieuw)
-  if(client?.responses && typeof client.responses.create==='function'){
-    try{
-      const resp=await client.responses.create({
+  if (client?.responses && typeof client.responses.create === 'function') {
+    try {
+      const resp = await client.responses.create({
         model: m,
         instructions,
         input,
-        store:false,
-        text:{format:{type:'json_schema',name:sch.name,schema:sch.schema,strict:true}}
+        store: false,
+        text: { format: { type: 'json_schema', name: sch.name, schema: sch.schema, strict: true } }
       });
       return extractJsonText(resp);
-    }catch(err){
+    } catch (err) {
       // Als dit pad faalt door SDK/endpoint mismatch, probeer Chat Completions.
-      const status=getStatus(err);
-      if(isTypeError(err) || status===404){
+      const status = getStatus(err);
+      if (isTypeError(err) || status === 404) {
         // fallback hieronder
-      }else{
+      } else {
         throw err;
       }
     }
   }
 
-  // Path B: Chat Completions (ouder/breder compatibel)
-  const resp=await client.chat.completions.create({
+  // Path B: Chat Completions (breder compatibel)
+  // Gebruik Structured Outputs (json_schema) waar mogelijk; reduceert EJSON-falen sterk.
+  // Als dit 400 geeft, vangt generateStructured dit af en valt terug.
+  const response_format = (sch && sch.schema)
+    ? { type: 'json_schema', json_schema: { name: sch.name, schema: sch.schema, strict: true } }
+    : { type: 'json_object' };
+
+  const resp = await client.chat.completions.create({
     model: m,
-    messages:[
-      {role:'system',content:instructions},
-      {role:'user',content:input}
+    messages: [
+      { role: 'system', content: instructions },
+      { role: 'user', content: input }
     ],
-    response_format:{ type:'json_object' }
+    response_format
   });
+
   return extractChatJsonText(resp);
 }
 
-async function callLLMPlain({apiKey,instructions,input,model}){
-  const client=new OpenAI({apiKey});
-  const m=model || 'gpt-4o-mini';
+async function callLLMPlain({ apiKey, instructions, input, model }) {
+  const client = new OpenAI({ apiKey });
+  const m = model || 'gpt-4o-mini';
 
-  // Gebruik Chat Completions zonder response_format (max compatibiliteit).
-  const resp=await client.chat.completions.create({
+  // Maximale compatibiliteit: geen response_format.
+  const resp = await client.chat.completions.create({
     model: m,
-    messages:[
-      {role:'system',content:instructions},
-      {role:'user',content:input}
+    messages: [
+      { role: 'system', content: instructions },
+      { role: 'user', content: input }
     ]
   });
+
   return extractChatJsonText(resp);
 }
 
-
-async function generateStructured({apiKey,instructions,input,model,retryOnce,schema}){
-  try{
+async function generateStructured({ apiKey, instructions, input, model, retryOnce, schema }) {
+  try {
     // Guard: voorkom te grote requests (snel en voorspelbaar)
     const maxChars = Number(process.env.MAX_LLM_CHARS || 120000);
-    const approxChars = String(instructions||'').length + String(input||'').length;
-    if(Number.isFinite(maxChars) && maxChars > 0 && approxChars > maxChars){
+    const approxChars = String(instructions || '').length + String(input || '').length;
+
+    if (Number.isFinite(maxChars) && maxChars > 0 && approxChars > maxChars) {
       return {
-        ok:false,
-        errorCode:'E413',
-        techHelp:false,
-        signals:[{code:'E413', message:`Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`}]
+        ok: false,
+        errorCode: 'E413',
+        techHelp: false,
+        signals: [{
+          code: 'E413',
+          message: `Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`
+        }]
       };
     }
-    const txt=await callLLM({apiKey,instructions,input,model,schema});
-    const p=safeParse(txt||'');
-    if(p.ok) return {ok:true,data:p.data};
 
-    if(retryOnce){
-      const strictInstr=instructions+'\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
-      const txt2=await callLLM({apiKey,instructions:strictInstr,input,model,schema});
-      const p2=safeParse(txt2||'');
-      if(p2.ok) return {ok:true,data:p2.data};
+    const txt = await callLLM({ apiKey, instructions, input, model, schema });
+    const p = safeParse(txt || '');
+    if (p.ok) return { ok: true, data: p.data };
+
+    if (retryOnce) {
+      const strictInstr =
+        instructions +
+        '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+      const txt2 = await callLLM({ apiKey, instructions: strictInstr, input, model, schema });
+      const p2 = safeParse(txt2 || '');
+      if (p2.ok) return { ok: true, data: p2.data };
     }
 
-    return {ok:false, errorCode:'EJSON', techHelp:true, signals:[{code:'EJSON', message:'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'}]};
-  }catch(err){
+    return {
+      ok: false,
+      errorCode: 'EJSON',
+      techHelp: true,
+      signals: [{
+        code: 'EJSON',
+        message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
+      }]
+    };
+  } catch (err) {
     // Log alleen technische metadata (geen tekst/prompt)
     logOpenAIError(err);
 
     const classified = classifyOpenAIError(err);
 
     // Compat fallback: als structured output 400 geeft, probeer nog 1x zonder response_format.
-    if(classified?.errorCode === 'E400' && retryOnce){
-      try{
-        const strictInstr = instructions + "\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.";
-        const txt2 = await callLLMPlain({apiKey,instructions:strictInstr,input,model});
-        const p2 = safeParse(txt2||'');
-        if(p2.ok) return {ok:true,data:p2.data};
+    if (classified?.errorCode === 'E400' && retryOnce) {
+      try {
+        const strictInstr =
+          instructions +
+          '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+        const txt2 = await callLLMPlain({ apiKey, instructions: strictInstr, input, model });
+        const p2 = safeParse(txt2 || '');
+        if (p2.ok) return { ok: true, data: p2.data };
+
         return {
-          ok:false,
-          errorCode:'EJSON',
-          techHelp:true,
-          signals:[{code:'EJSON', message:'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'}]
+          ok: false,
+          errorCode: 'EJSON',
+          techHelp: true,
+          signals: [{
+            code: 'EJSON',
+            message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
+          }]
         };
-      }catch(err2){
+      } catch (err2) {
         logOpenAIError(err2);
-        return {ok:false, ...classifyOpenAIError(err2)};
+        return { ok: false, ...classifyOpenAIError(err2) };
       }
     }
 
-    return {ok:false, ...classified};
+    return { ok: false, ...classified };
   }
 }
 
+function safe(v) {
+  return (v === undefined || v === null) ? '' : String(v);
+}
 
-function safe(v){ return (v===undefined||v===null) ? '' : String(v); }
-
-function getErrMeta(err){
+function getErrMeta(err) {
   const status = getStatus(err);
   const type = err?.error?.type || err?.type || err?.name || '';
   const code = err?.code || err?.cause?.code || err?.error?.code || '';
   const param = err?.error?.param || err?.param || '';
-  return {status, type, code, param};
+  return { status, type, code, param };
 }
 
-function logOpenAIError(err){
-  const {status,type,code,param} = getErrMeta(err);
-  // Alleen technische logging: status/type/code/param
-  console.log(`openai_error:status=${safe(status)||'na'} type=${safe(type)} code=${safe(code)} param=${safe(param)}`);
+function logOpenAIError(err) {
+  const { status, type, code, param } = getErrMeta(err);
+  console.log(`openai_error:status=${safe(status) || 'na'} type=${safe(type)} code=${safe(code)} param=${safe(param)}`);
 }
-module.exports={generateStructured};
 
-function classifyOpenAIError(err){
+function classifyOpenAIError(err) {
   const status = getStatus(err);
   const errCode = String(err?.code || err?.cause?.code || '');
 
   // Netwerk/transport fouten (geen inhoud loggen)
   const netCodes = new Set([
-    'ENOTFOUND','ECONNRESET','ETIMEDOUT','EAI_AGAIN','ECONNREFUSED',
-    'UND_ERR_CONNECT_TIMEOUT','UND_ERR_SOCKET','UND_ERR_HEADERS_TIMEOUT'
+    'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED',
+    'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT'
   ]);
-  if(netCodes.has(errCode)){
+  if (netCodes.has(errCode)) {
     return {
       errorCode: 'E503NET',
       techHelp: true,
-      signals: [{ code:'E503NET', message:'Netwerkprobleem bij AI-koppeling. Probeer het opnieuw; als dit blijft: beheerder laten controleren.' }]
+      signals: [{ code: 'E503NET', message: 'Netwerkprobleem bij AI-koppeling. Probeer het opnieuw; als dit blijft: beheerder laten controleren.' }]
     };
   }
 
-  // OpenAI/Upstream 5xx
-  if(status >= 500){
+  if (status >= 500) {
     return {
       errorCode: 'E5XX',
       techHelp: true,
-      signals: [{ code:'E5XX', message:'AI-dienst is tijdelijk niet beschikbaar (5xx). Probeer het later opnieuw.' }]
+      signals: [{ code: 'E5XX', message: 'AI-dienst is tijdelijk niet beschikbaar (5xx). Probeer het later opnieuw.' }]
     };
   }
 
-  // SDK mismatch / programmeerfout (geen tekstdata loggen/tonen)
-  if(isTypeError(err)){
+  if (isTypeError(err)) {
     return {
       errorCode: 'E400SDK',
       techHelp: true,
-      signals: [{ code:'E400SDK', message:'Technische fout in AI-koppeling (SDK mismatch). Redeploy met vastgezette dependencies.' }]
+      signals: [{ code: 'E400SDK', message: 'Technische fout in AI-koppeling (SDK mismatch). Redeploy met vastgezette dependencies.' }]
     };
   }
 
-  if(status === 400){
+  if (status === 400) {
     return {
       errorCode: 'E400',
       techHelp: true,
-      signals: [{ code:'E400', message:'AI weigert de aanvraag (400). Mogelijk te lange invoer of ongeldig formaat. Probeer een korter document.' }]
+      signals: [{ code: 'E400', message: 'AI weigert de aanvraag (400). Mogelijk te lange invoer of ongeldig formaat. Probeer een korter document.' }]
     };
   }
-  if(status === 401){
+  if (status === 401) {
     return {
       errorCode: 'E401',
       techHelp: false,
-      signals: [{ code:'E401', message:'AI weigert de API-key (401). Controleer of de key klopt en toegang heeft.' }]
+      signals: [{ code: 'E401', message: 'AI weigert de API-key (401). Controleer of de key klopt en toegang heeft.' }]
     };
   }
-  if(status === 404){
+  if (status === 404) {
     return {
       errorCode: 'E404',
       techHelp: true,
-      signals: [{ code:'E404', message:'AI-model of endpoint niet beschikbaar (404). Controleer model en dependencies.' }]
+      signals: [{ code: 'E404', message: 'AI-model of endpoint niet beschikbaar (404). Controleer model en dependencies.' }]
     };
   }
-  if(status === 429){
+  if (status === 429) {
     return {
       errorCode: 'E429',
       techHelp: true,
-      signals: [{ code:'E429', message:'AI krijgt te veel aanvragen (429). Wacht even en probeer opnieuw.' }]
+      signals: [{ code: 'E429', message: 'AI krijgt te veel aanvragen (429). Wacht even en probeer opnieuw.' }]
     };
   }
 
-  // Fallback
   return {
     errorCode: 'W010',
     techHelp: true,
-    signals: [{ code:'W010', message:'Technisch probleem bij AI-verwerking. Probeer het opnieuw.' }]
+    signals: [{ code: 'W010', message: 'Technisch probleem bij AI-verwerking. Probeer het opnieuw.' }]
   };
 }
+
+module.exports = { generateStructured };
