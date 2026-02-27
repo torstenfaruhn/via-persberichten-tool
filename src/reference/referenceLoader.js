@@ -6,23 +6,14 @@ const path = require('path');
 const DEFAULT_PATH = path.join(__dirname, 'entities.nl.json');
 
 async function loadReferenceEntities({ filePath } = {}) {
-  // Belangrijk:
-  // - Als REFERENCE_ENTITIES_PATH een relatief pad is (bv. "src/reference/entities.nl.json"),
-  //   resolve dat dan tegen process.cwd() zodat het op Render betrouwbaar werkt.
-  // - Als laden faalt, log dat (zonder inhoud te loggen) zodat debugging mogelijk is.
-  const p = filePath
-    ? path.resolve(process.cwd(), String(filePath))
-    : DEFAULT_PATH;
-
+  const p = filePath ? String(filePath) : DEFAULT_PATH;
   try {
     const raw = await fs.readFile(p, 'utf-8');
     const data = JSON.parse(raw);
     const entities = Array.isArray(data) ? data : (Array.isArray(data?.entities) ? data.entities : []);
     return { ok: true, entities: sanitizeEntities(entities), version: data?.version || null };
   } catch (err) {
-    const code = err?.code ? String(err.code) : 'UNKNOWN';
-    console.log(`reference_load_error:path=${p} code=${code}`);
-    // Niet fataal: tool moet doorgaan, maar zonder referenties.
+    // Bestaat niet of is ongeldig JSON: niet fataal.
     return { ok: true, entities: [], version: null };
   }
 }

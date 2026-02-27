@@ -9,6 +9,7 @@ function consistencyCheckWarnings(consistency) {
       }
     ];
   }
+
   const issues = Array.isArray(consistency?.issues) ? consistency.issues : [];
   if (issues.length === 0) return [];
 

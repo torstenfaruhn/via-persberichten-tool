@@ -99,7 +99,7 @@ function runValidators({ sourceCharCount, llmData, detectorResult, contactInfo, 
   warnings.push(...nameInconsistencyWarnings(llmData));
   warnings.push(...externalVerifyWarnings(llmData));
 
-  // W016: consistency-audit
+  // W016/W017: consistency-audit
   warnings.push(...consistencyCheckWarnings(consistency));
 
   if (contactInfo?.found) warnings.push(...contactWarnings());

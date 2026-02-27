@@ -19,8 +19,6 @@ const { AUDIT_SCHEMA } = require('../llm/auditSchema');
 const { loadReferenceEntities } = require('../reference/referenceLoader');
 const { applyReferenceRulesToAudit } = require('../reference/applyReferenceRules');
 
-const { preNormalizeConceptForAudit } = require('../audit/preNormalizeAuditText');
-
 async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   const start = Date.now();
   const max = Number(maxSeconds || 360);
@@ -43,9 +41,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: 'E005',
         techHelp: true,
-        signals: [
-          { code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }
-        ]
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
       };
     }
 
@@ -80,9 +76,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: 'E005',
         techHelp: true,
-        signals: [
-          { code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }
-        ]
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
       };
     }
 
@@ -94,29 +88,12 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       try {
         safeLog('audit_status:started');
 
-        // Laad referentielijst 1x en hergebruik:
-        // - voor pre-normalisatie (plaatsen set)
-        // - voor Route A verrijking
-        const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
-
-        // Pre-normalisatie alleen voor audit-input (niet voor publicatie)
-        const prenorm = preNormalizeConceptForAudit({
-          title: llm.data?.title || '',
-          intro: llm.data?.intro || '',
-          body: llm.data?.body || '',
-          referenceEntities: ref.entities
-        });
-
-        safeLog(
-          `audit_prenorm:replacements=${prenorm.meta.replacements} places=${prenorm.meta.places_count}`
-        );
-
         const auditInstructions = buildAuditInstructions();
         const auditInput = buildAuditInput({
           sourceText: ex.text,
-          title: prenorm.title,
-          intro: prenorm.intro,
-          body: prenorm.body
+          title: llm.data?.title || '',
+          intro: llm.data?.intro || '',
+          body: llm.data?.body || ''
         });
 
         const auditModel = process.env.OPENAI_AUDIT_MODEL || process.env.OPENAI_MODEL || 'gpt-4o-mini';
@@ -130,6 +107,8 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         });
 
         if (audit.ok) {
+          // audit.ok = call+parse is gelukt.
+          // audit.data.ok = "model zegt of het kon". Die waarde blijkt soms 'false' te zijn ondanks issues.
           const payload = audit.data || {};
           const issues = Array.isArray(payload.issues) ? payload.issues : [];
           const stats = payload.stats || { entities_checked: 0, place_links_checked: 0 };
@@ -138,34 +117,23 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
           safeLog(`audit_status:ok issues=${issues.length} modelOk=${modelOk}`);
 
           // Als model ok=false maar er wél issues zijn, beschouwen we de audit als bruikbaar.
-          // Als ok=false en issues=0: dan is audit inhoudelijk "niet beschikbaar".
           if (!modelOk && issues.length === 0) {
             consistency = { ok: false, errorCode: 'AUDIT_NOT_OK', issues: [], stats };
           } else {
-            // Forceer ok=true zodat outputBuilder/validators niet W017 triggert wanneer er wél issues zijn.
+            // Forceer ok=true zodat outputBuilder/validators niet W017 triggert
             const normalizedAudit = { ok: true, issues, stats };
 
-            // Route A: deterministische verrijking met referentielijst
+            const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
             consistency = applyReferenceRulesToAudit(normalizedAudit, ref.entities);
           }
         } else {
           const ec = audit.errorCode || 'UNKNOWN';
           safeLog(`audit_status:failed errorCode=${ec}`);
-          consistency = {
-            ok: false,
-            errorCode: ec,
-            issues: [],
-            stats: { entities_checked: 0, place_links_checked: 0 }
-          };
+          consistency = { ok: false, errorCode: ec, issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
         }
       } catch (_) {
         safeLog('audit_status:failed errorCode=EXCEPTION');
-        consistency = {
-          ok: false,
-          errorCode: 'EXCEPTION',
-          issues: [],
-          stats: { entities_checked: 0, place_links_checked: 0 }
-        };
+        consistency = { ok: false, errorCode: 'EXCEPTION', issues: [], stats: { entities_checked: 0, place_links_checked: 0 } };
       }
     }
 
@@ -174,9 +142,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         ok: false,
         errorCode: 'E005',
         techHelp: true,
-        signals: [
-          { code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }
-        ]
+        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
       };
     }
 
@@ -213,9 +179,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
       ok: false,
       errorCode: 'W010',
       techHelp: true,
-      signals: [
-        { code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }
-      ]
+      signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }]
     };
   }
 }

@@ -11,64 +11,6 @@ function truncate(s, n) {
   return t.length <= n ? t : (t.slice(0, n - 1) + '…');
 }
 
-function escPipe(x) {
-  return String(x || '').replace(/\|/g, '\\|');
-}
-
-function parseBronLabel(label) {
-  const m = String(label || '').match(/^\[BRON A(\d+)\s+Z(\d+)\]$/);
-  if (!m) return null;
-  return { a: Number(m[1]), z: Number(m[2]) };
-}
-
-function formatBronIndex(consistency) {
-  const ok = Boolean(consistency?.ok);
-  const issues = Array.isArray(consistency?.issues) ? consistency.issues : [];
-  const idx = consistency?._locatorIndex?.bron;
-
-  if (!ok || issues.length === 0) return [];
-  if (!idx || typeof idx !== 'object') return [];
-
-  // Verzamel alle gebruikte BRON locators uit evidence
-  const used = new Set();
-  for (const it of issues) {
-    const ev = Array.isArray(it?.evidence) ? it.evidence : [];
-    for (const e of ev) {
-      const loc = String(e?.locator || '').trim();
-      if (!loc) continue;
-      if (loc.startsWith('[BRON ')) used.add(loc);
-    }
-  }
-
-  if (used.size === 0) return [];
-
-  // Sorteer op (A, Z)
-  const sorted = Array.from(used).sort((x, y) => {
-    const px = parseBronLabel(x);
-    const py = parseBronLabel(y);
-    if (!px && !py) return x.localeCompare(y);
-    if (!px) return 1;
-    if (!py) return -1;
-    if (px.a !== py.a) return px.a - py.a;
-    return px.z - py.z;
-  });
-
-  // Cap om output beheersbaar te houden
-  const cap = 40;
-  const lines = [];
-  lines.push('BRONINDEX (vindplaatsen)');
-  for (const lab of sorted.slice(0, cap)) {
-    const sentence = idx[lab];
-    if (!sentence) continue;
-    lines.push(`${lab} ${truncate(sentence, 220)}`);
-  }
-  if (sorted.length > cap) {
-    lines.push(`- (ingekort) ${sorted.length - cap} extra vindplaatsen niet getoond.`);
-  }
-
-  return lines;
-}
-
 function formatConsistencyCheck(consistency) {
   if (!consistency) return [];
 
@@ -88,7 +30,7 @@ function formatConsistencyCheck(consistency) {
     return lines;
   }
 
-  // Markdown-achtige tabel
+  // Markdown-achtige tabel (werkt in plain text en is goed scanbaar).
   lines.push('| Type | Entiteit | Varianten / Plaatsen | Vindplaatsen | Ernst | Opmerking |');
   lines.push('|---|---|---|---|---|---|');
 
@@ -109,28 +51,26 @@ function formatConsistencyCheck(consistency) {
       : '';
 
     const sev = String(it?.severity || '').trim() || '-';
-    const note = truncate(String(it?.note || '').trim(), 180) || '-';
+    const note = truncate(String(it?.note || '').trim(), 140) || '-';
 
-    lines.push(`| ${escPipe(type)} | ${escPipe(ent)} | ${escPipe(varOrPlace)} | ${escPipe(locs)} | ${escPipe(sev)} | ${escPipe(note)} |`);
-  }
-
-  // UX optie 2.2: BRONINDEX direct onder de CONSISTENTIECHECK
-  const bronIndexLines = formatBronIndex(consistency);
-  if (bronIndexLines.length > 0) {
-    lines.push('');
-    lines.push(...bronIndexLines);
+    const esc = (x) => String(x || '').replace(/\|/g, '\\|');
+    lines.push(`| ${esc(type)} | ${esc(ent)} | ${esc(varOrPlace)} | ${esc(locs)} | ${esc(sev)} | ${esc(note)} |`);
   }
 
   return lines;
 }
 
 /**
- * Output document:
- * titel + intro + body (plain)
- * daarna: SIGNALEN
- * daarna: CONSISTENTIECHECK (+ BRONINDEX)
- * daarna: BRON
- * daarna: CONTACT
+ * Bouwt het output-document.
+ * Plain tekst:
+ *   titel
+ *   (lege regel)
+ *   intro
+ *   (lege regel)
+ *   body
+ * Daarna:
+ *   CONSISTENTIECHECK (optioneel)
+ *   SIGNALEN/BRON/CONTACT
  */
 function buildOutput({ llmData, signals, contactLines, consistency }) {
   const title = String(llmData?.title || '').trim();
@@ -150,23 +90,18 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   if (parts.length > 0) parts.push('');
 
-  // SIGNALEN eerst
-  parts.push('SIGNALEN');
-  parts.push(bullets(signals));
-  parts.push('');
-
-  // CONSISTENTIECHECK onder SIGNALEN
   const cc = formatConsistencyCheck(consistency);
   if (cc.length > 0) {
     parts.push(...cc);
     parts.push('');
   }
 
-  // BRON
+  parts.push('SIGNALEN');
+  parts.push(bullets(signals));
+  parts.push('');
   parts.push('BRON');
   parts.push(bron);
 
-  // CONTACT
   if (Array.isArray(contactLines) && contactLines.length > 0) {
     parts.push('');
     parts.push('CONTACT (niet voor publicatie)');

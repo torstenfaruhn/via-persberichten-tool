@@ -1,7 +1,5 @@
 'use strict';
 
-// Deterministische normalisatie voor lookup.
-
 function normalizeKey(s) {
   let x = String(s || '').trim().toLowerCase();
   if (!x) return '';
@@ -32,7 +30,6 @@ function normalizeKey(s) {
 }
 
 function normalizePlace(s) {
-  // Voor nu dezelfde normalisatie; aparte functie zodat je later kunt uitbreiden.
   return normalizeKey(s);
 }
 
