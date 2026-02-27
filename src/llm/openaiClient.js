@@ -1,11 +1,12 @@
 'use strict';
+
 const OpenAI = require('openai');
 const { LLM_SCHEMA } = require('./schema');
 
 function extractJsonText(resp) {
   if (!resp) return null;
 
-  // JS SDK convenience property
+  // SDK convenience field
   if (typeof resp.output_text === 'string' && resp.output_text.trim()) return resp.output_text.trim();
 
   const out = resp.output || [];
@@ -21,7 +22,6 @@ function extractJsonText(resp) {
 function extractChatJsonText(resp) {
   const c = resp?.choices?.[0]?.message?.content;
   if (typeof c === 'string' && c.trim()) return c.trim();
-  // Sommige SDK’s/varianten kunnen content als object leveren; maak het dan stringifybaar.
   if (c && typeof c === 'object') return JSON.stringify(c);
   return null;
 }
@@ -33,23 +33,19 @@ function normalizeJsonCandidate(txt) {
   // Strip markdown code fences
   if (s.startsWith('```')) {
     const lines = s.split(/\r?\n/);
-    lines.shift(); // first fence
-    if (lines.length && lines[lines.length - 1].trim().startsWith('```')) lines.pop(); // last fence
+    lines.shift();
+    if (lines.length && lines[lines.length - 1].trim().startsWith('```')) lines.pop();
     s = lines.join('\n').trim();
   }
 
-  // If there's extra text around JSON, take the outermost object/array
+  // Take the outermost object/array if extra text exists
   const firstObj = s.indexOf('{');
   const lastObj = s.lastIndexOf('}');
   const firstArr = s.indexOf('[');
   const lastArr = s.lastIndexOf(']');
 
-  if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) {
-    return s.slice(firstObj, lastObj + 1).trim();
-  }
-  if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) {
-    return s.slice(firstArr, lastArr + 1).trim();
-  }
+  if (firstObj !== -1 && lastObj !== -1 && lastObj > firstObj) return s.slice(firstObj, lastObj + 1).trim();
+  if (firstArr !== -1 && lastArr !== -1 && lastArr > firstArr) return s.slice(firstArr, lastArr + 1).trim();
   return s;
 }
 
@@ -65,145 +61,9 @@ function safeParse(txt) {
 function isTypeError(err) {
   return err instanceof TypeError || err?.name === 'TypeError';
 }
+
 function getStatus(err) {
   return Number(err?.status || err?.response?.status || err?.statusCode || 0);
-}
-
-async function callLLM({ apiKey, instructions, input, model, schema }) {
-  const client = new OpenAI({ apiKey });
-  const m = model || 'gpt-4o-mini';
-  const sch = schema || LLM_SCHEMA;
-
-  // Path A: Responses API (nieuw)
-  if (client?.responses && typeof client.responses.create === 'function') {
-    try {
-      const resp = await client.responses.create({
-        model: m,
-        instructions,
-        input,
-        store: false,
-        text: { format: { type: 'json_schema', name: sch.name, schema: sch.schema, strict: true } }
-      });
-      return extractJsonText(resp);
-    } catch (err) {
-      // Als dit pad faalt door SDK/endpoint mismatch, probeer Chat Completions.
-      const status = getStatus(err);
-      if (isTypeError(err) || status === 404) {
-        // fallback hieronder
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  // Path B: Chat Completions (breder compatibel)
-  // Gebruik Structured Outputs (json_schema) waar mogelijk; reduceert EJSON-falen sterk.
-  // Als dit 400 geeft, vangt generateStructured dit af en valt terug.
-  const response_format = (sch && sch.schema)
-    ? { type: 'json_schema', json_schema: { name: sch.name, schema: sch.schema, strict: true } }
-    : { type: 'json_object' };
-
-  const resp = await client.chat.completions.create({
-    model: m,
-    messages: [
-      { role: 'system', content: instructions },
-      { role: 'user', content: input }
-    ],
-    response_format
-  });
-
-  return extractChatJsonText(resp);
-}
-
-async function callLLMPlain({ apiKey, instructions, input, model }) {
-  const client = new OpenAI({ apiKey });
-  const m = model || 'gpt-4o-mini';
-
-  // Maximale compatibiliteit: geen response_format.
-  const resp = await client.chat.completions.create({
-    model: m,
-    messages: [
-      { role: 'system', content: instructions },
-      { role: 'user', content: input }
-    ]
-  });
-
-  return extractChatJsonText(resp);
-}
-
-async function generateStructured({ apiKey, instructions, input, model, retryOnce, schema }) {
-  try {
-    // Guard: voorkom te grote requests (snel en voorspelbaar)
-    const maxChars = Number(process.env.MAX_LLM_CHARS || 120000);
-    const approxChars = String(instructions || '').length + String(input || '').length;
-
-    if (Number.isFinite(maxChars) && maxChars > 0 && approxChars > maxChars) {
-      return {
-        ok: false,
-        errorCode: 'E413',
-        techHelp: false,
-        signals: [{
-          code: 'E413',
-          message: `Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`
-        }]
-      };
-    }
-
-    const txt = await callLLM({ apiKey, instructions, input, model, schema });
-    const p = safeParse(txt || '');
-    if (p.ok) return { ok: true, data: p.data };
-
-    if (retryOnce) {
-      const strictInstr =
-        instructions +
-        '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
-      const txt2 = await callLLM({ apiKey, instructions: strictInstr, input, model, schema });
-      const p2 = safeParse(txt2 || '');
-      if (p2.ok) return { ok: true, data: p2.data };
-    }
-
-    return {
-      ok: false,
-      errorCode: 'EJSON',
-      techHelp: true,
-      signals: [{
-        code: 'EJSON',
-        message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
-      }]
-    };
-  } catch (err) {
-    // Log alleen technische metadata (geen tekst/prompt)
-    logOpenAIError(err);
-
-    const classified = classifyOpenAIError(err);
-
-    // Compat fallback: als structured output 400 geeft, probeer nog 1x zonder response_format.
-    if (classified?.errorCode === 'E400' && retryOnce) {
-      try {
-        const strictInstr =
-          instructions +
-          '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
-        const txt2 = await callLLMPlain({ apiKey, instructions: strictInstr, input, model });
-        const p2 = safeParse(txt2 || '');
-        if (p2.ok) return { ok: true, data: p2.data };
-
-        return {
-          ok: false,
-          errorCode: 'EJSON',
-          techHelp: true,
-          signals: [{
-            code: 'EJSON',
-            message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
-          }]
-        };
-      } catch (err2) {
-        logOpenAIError(err2);
-        return { ok: false, ...classifyOpenAIError(err2) };
-      }
-    }
-
-    return { ok: false, ...classified };
-  }
 }
 
 function safe(v) {
@@ -218,20 +78,21 @@ function getErrMeta(err) {
   return { status, type, code, param };
 }
 
-function logOpenAIError(err) {
+function logOpenAIError(err, context) {
   const { status, type, code, param } = getErrMeta(err);
-  console.log(`openai_error:status=${safe(status) || 'na'} type=${safe(type)} code=${safe(code)} param=${safe(param)}`);
+  const ctx = context ? ` ctx=${safe(context)}` : '';
+  console.log(`openai_error:status=${safe(status) || 'na'} type=${safe(type)} code=${safe(code)} param=${safe(param)}${ctx}`);
 }
 
 function classifyOpenAIError(err) {
   const status = getStatus(err);
   const errCode = String(err?.code || err?.cause?.code || '');
 
-  // Netwerk/transport fouten (geen inhoud loggen)
   const netCodes = new Set([
     'ENOTFOUND', 'ECONNRESET', 'ETIMEDOUT', 'EAI_AGAIN', 'ECONNREFUSED',
     'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET', 'UND_ERR_HEADERS_TIMEOUT'
   ]);
+
   if (netCodes.has(errCode)) {
     return {
       errorCode: 'E503NET',
@@ -290,6 +151,145 @@ function classifyOpenAIError(err) {
     techHelp: true,
     signals: [{ code: 'W010', message: 'Technisch probleem bij AI-verwerking. Probeer het opnieuw.' }]
   };
+}
+
+async function callLLM({ apiKey, instructions, input, model, schema }) {
+  const client = new OpenAI({ apiKey });
+  const m = model || 'gpt-4o-mini';
+  const sch = schema || LLM_SCHEMA;
+
+  // Path A: Responses API
+  if (client?.responses && typeof client.responses.create === 'function') {
+    try {
+      const resp = await client.responses.create({
+        model: m,
+        instructions,
+        input,
+        store: false,
+        text: { format: { type: 'json_schema', name: sch.name, schema: sch.schema, strict: true } }
+      });
+      return extractJsonText(resp);
+    } catch (err) {
+      logOpenAIError(err, 'responses');
+
+      const status = getStatus(err);
+      // Fallback conditions: SDK mismatch / endpoint not available
+      if (isTypeError(err) || status === 404) {
+        // fall through to chat.completions
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  // Path B: Chat Completions
+  const response_format = (sch && sch.schema)
+    ? { type: 'json_schema', json_schema: { name: sch.name, schema: sch.schema, strict: true } }
+    : { type: 'json_object' };
+
+  try {
+    const resp = await client.chat.completions.create({
+      model: m,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: input }
+      ],
+      response_format
+    });
+
+    return extractChatJsonText(resp);
+  } catch (err) {
+    logOpenAIError(err, 'chat');
+    throw err;
+  }
+}
+
+async function callLLMPlain({ apiKey, instructions, input, model }) {
+  const client = new OpenAI({ apiKey });
+  const m = model || 'gpt-4o-mini';
+
+  try {
+    const resp = await client.chat.completions.create({
+      model: m,
+      messages: [
+        { role: 'system', content: instructions },
+        { role: 'user', content: input }
+      ]
+    });
+    return extractChatJsonText(resp);
+  } catch (err) {
+    logOpenAIError(err, 'plain');
+    throw err;
+  }
+}
+
+async function generateStructured({ apiKey, instructions, input, model, retryOnce, schema }) {
+  try {
+    const maxChars = Number(process.env.MAX_LLM_CHARS || 120000);
+    const approxChars = String(instructions || '').length + String(input || '').length;
+
+    if (Number.isFinite(maxChars) && maxChars > 0 && approxChars > maxChars) {
+      return {
+        ok: false,
+        errorCode: 'E413',
+        techHelp: false,
+        signals: [{
+          code: 'E413',
+          message: `Invoer is te lang voor AI-verwerking (limiet ${maxChars} tekens). Maak het document korter of splits het op.`
+        }]
+      };
+    }
+
+    const txt = await callLLM({ apiKey, instructions, input, model, schema });
+    const p = safeParse(txt || '');
+    if (p.ok) return { ok: true, data: p.data };
+
+    if (retryOnce) {
+      const strictInstr = instructions + '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+      const txt2 = await callLLM({ apiKey, instructions: strictInstr, input, model, schema });
+      const p2 = safeParse(txt2 || '');
+      if (p2.ok) return { ok: true, data: p2.data };
+    }
+
+    return {
+      ok: false,
+      errorCode: 'EJSON',
+      techHelp: true,
+      signals: [{
+        code: 'EJSON',
+        message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
+      }]
+    };
+  } catch (err) {
+    logOpenAIError(err, 'generateStructured');
+
+    const classified = classifyOpenAIError(err);
+
+    // Compat fallback: if structured output 400 gives issues, try once without response_format.
+    if (classified?.errorCode === 'E400' && retryOnce) {
+      try {
+        const strictInstr = instructions + '\n\nBELANGRIJK: Je geeft alleen 1 JSON-object terug. Geen extra tekens ervoor of erna.';
+        const txt2 = await callLLMPlain({ apiKey, instructions: strictInstr, input, model });
+        const p2 = safeParse(txt2 || '');
+        if (p2.ok) return { ok: true, data: p2.data };
+
+        return {
+          ok: false,
+          errorCode: 'EJSON',
+          techHelp: true,
+          signals: [{
+            code: 'EJSON',
+            message: 'AI gaf geen geldig JSON-resultaat terug. Probeer het opnieuw; als dit blijft: korter document of beheerder.'
+          }]
+        };
+      } catch (err2) {
+        logOpenAIError(err2, 'fallback_plain');
+        return { ok: false, ...classifyOpenAIError(err2) };
+      }
+    }
+
+    return { ok: false, ...classified };
+  }
 }
 
 module.exports = { generateStructured };
