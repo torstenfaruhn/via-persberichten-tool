@@ -69,8 +69,9 @@ function formatConsistencyCheck(consistency) {
  *   (lege regel)
  *   body
  * Daarna:
+ *   SIGNALEN
  *   CONSISTENTIECHECK (optioneel)
- *   SIGNALEN/BRON/CONTACT
+ *   BRON/CONTACT
  */
 function buildOutput({ llmData, signals, contactLines, consistency }) {
   const title = String(llmData?.title || '').trim();
@@ -90,26 +91,18 @@ function buildOutput({ llmData, signals, contactLines, consistency }) {
 
   if (parts.length > 0) parts.push('');
 
+  // SIGNALEN eerst
+  parts.push('SIGNALEN');
+  parts.push(bullets(signals));
+  parts.push('');
+
+  // CONSISTENTIECHECK onder SIGNALEN
   const cc = formatConsistencyCheck(consistency);
   if (cc.length > 0) {
     parts.push(...cc);
     parts.push('');
   }
 
-  parts.push('SIGNALEN');
-  parts.push(bullets(signals));
-  parts.push('');
+  // Daarna BRON / CONTACT
   parts.push('BRON');
-  parts.push(bron);
-
-  if (Array.isArray(contactLines) && contactLines.length > 0) {
-    parts.push('');
-    parts.push('CONTACT (niet voor publicatie)');
-    parts.push(contactLines.join('\n'));
-  }
-
-  parts.push('');
-  return parts.join('\n');
-}
-
-module.exports = { buildOutput };
+  parts.push(bron
