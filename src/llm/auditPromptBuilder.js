@@ -21,8 +21,8 @@ function buildAuditInput({ sourceText, title, intro, body }) {
         variants: ['Glaspaleis', 'het Glaspaleis'],
         places: ['Heerlen', 'Simpelveld'],
         evidence: [
-          { where: 'bron', locator: 'bron:alinea2:zin1', snippet: '… Glaspaleis in Heerlen …' },
-          { where: 'bron', locator: 'bron:alinea4:zin2', snippet: '… in het Glaspaleis te Simpelveld …' }
+          { where: 'bron', locator: '[BRON A02 Z07]', snippet: 'De lezing is op dinsdag 24 februari in Glaspaleis in Heerlen.' },
+          { where: 'concept', locator: '[CONCEPT A02 Z10]', snippet: 'De filmzaal van het Glaspaleis in Simpelveld is …' }
         ],
         severity: 'hoog',
         confidence: 'hoog',
@@ -42,8 +42,8 @@ function buildAuditInput({ sourceText, title, intro, body }) {
         variants: ['Zuyderland Medisch Centrum', 'Zuyderland Medisch centrum'],
         places: [],
         evidence: [
-          { where: 'concept', locator: 'concept:intro:zin1', snippet: 'Zuyderland Medisch centrum meldt …' },
-          { where: 'concept', locator: 'concept:body:alinea2:zin1', snippet: 'Volgens Zuyderland Medisch Centrum …' }
+          { where: 'concept', locator: '[CONCEPT INTRO Z01]', snippet: 'Zuyderland Medisch centrum meldt …' },
+          { where: 'concept', locator: '[CONCEPT A02 Z01]', snippet: 'Volgens Zuyderland Medisch Centrum …' }
         ],
         severity: 'middel',
         confidence: 'hoog',
@@ -82,10 +82,19 @@ function buildAuditInput({ sourceText, title, intro, body }) {
     '- Adresregel met plaatsnaam mag meewegen als de entiteit in dezelfde zin/regel staat.',
     '- Zwakke patronen (lager vertrouwen): “vanuit {PLAATS}”, “regio {PLAATS}”.',
     '',
-    'EVIDENCE & LOCATORS',
+    'LOCATORS (ABSOLUUT VERPLICHTE NOTATIE)',
+    '- Gebruik EXACT deze notatie, inclusief vierkante haken:',
+    '  * BRON: [BRON A02 Z07] = alinea 2, zin 7 (start bij 01; altijd 2 cijfers).',
+    '  * CONCEPT titel: [CONCEPT TITEL]',
+    '  * CONCEPT intro: [CONCEPT INTRO Z03] = zin 3 van de intro (start bij 01; 2 cijfers).',
+    '  * CONCEPT body: [CONCEPT A02 Z07] = alinea 2, zin 7 (start bij 01; 2 cijfers).',
+    '',
+    'SNIPPETS (vindplaatsen)',
+    '- Snippet is de VOLLEDIGE zin uit BRONTEKST/CONCEPT (zo letterlijk mogelijk, geen parafrase).',
+    '- Max 240 tekens; als langer, knip af en eindig met …',
+    '',
+    'EVIDENCE',
     '- Voeg per issue evidence-items toe die de conflicterende vormen/plaatsen laten zien (minimaal 2 als er 2 conflicterende vormen/plaatsen zijn).',
-    '- Locator-formaat: bron:alinea{n}:zin{m} en concept:titel, concept:intro:zin{m}, concept:body:alinea{n}:zin{m}.',
-    '- Snippet is max 120 tekens.',
     '',
     'SEVERITY/CONFIDENCE (rubric)',
     '- Plaatskoppeling: hoog als dezelfde entiteit met sterke patronen aan 2+ verschillende plaatsen hangt. Middel als 1 link ambigue is.',
