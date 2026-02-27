@@ -11,7 +11,6 @@ const { runValidators } = require('./runValidators');
 const { buildOutput } = require('./outputBuilder');
 
 const { generateStructured } = require('../llm/openaiClient');
-
 const { buildAuditInstructions, buildAuditInput } = require('../llm/auditPromptBuilder');
 const { AUDIT_SCHEMA } = require('../llm/auditSchema');
 
@@ -28,21 +27,13 @@ function safeErrStr(err) {
 
 function resolveFn(mod, name) {
   if (!mod) return null;
-
-  // 1) CommonJS: module.exports = { buildInstructions, buildInput }
   if (typeof mod[name] === 'function') return mod[name];
-
-  // 2) ESM-ish interop: module.exports = { default: { buildInstructions, buildInput } }
   if (typeof mod.default?.[name] === 'function') return mod.default[name];
-
-  // 3) module.exports = function () {} (alleen voor buildInstructions/buildInput is dat onwaarschijnlijk,
-  // maar we ondersteunen het voor compatibiliteit)
   if (typeof mod === 'function' && name === 'buildInstructions') return mod;
-
   return null;
 }
 
-// Fallbacks (identiek aan jullie oorspronkelijke src/llm/promptBuilder.js)
+// Fallbacks (zodat tool niet crasht als promptBuilder exports afwijken)
 function defaultBuildInstructions({ stylebookText }) {
   const style = stylebookText ? `\n\nSTIJLBOEK:\n${stylebookText}\n` : '';
   return [
@@ -61,20 +52,16 @@ function defaultBuildInput({ sourceText }) {
   return ['BRONTEKST:', String(sourceText || '')].join('\n\n');
 }
 
-// PromptBuilder import (met compat-resolutie)
+// PromptBuilder import (compat)
 let buildInstructions;
 let buildInput;
 try {
   const promptBuilderMod = require('../llm/promptBuilder');
   buildInstructions = resolveFn(promptBuilderMod, 'buildInstructions') || defaultBuildInstructions;
   buildInput = resolveFn(promptBuilderMod, 'buildInput') || defaultBuildInput;
-
-  // Log alleen “welke route”; geen inhoud.
-  const usingFallback =
-    buildInstructions === defaultBuildInstructions || buildInput === defaultBuildInput;
+  const usingFallback = buildInstructions === defaultBuildInstructions || buildInput === defaultBuildInput;
   safeLog(`promptBuilder_resolved:${usingFallback ? 'fallback' : 'module'}`);
 } catch (err) {
-  // Als de module niet laadt, val terug i.p.v. crash.
   safeLog(`promptBuilder_load_failed:${safeErrStr(err)}`);
   console.error('promptBuilder_load_failed:', err?.stack || err);
   buildInstructions = defaultBuildInstructions;
@@ -89,21 +76,11 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   try {
     const ex = await extractText(inputPath);
     if (!ex.ok) {
-      return {
-        ok: false,
-        errorCode: ex.errorCode || 'E002',
-        techHelp: ex.techHelp === true,
-        signals: ex.signals || []
-      };
+      return { ok: false, errorCode: ex.errorCode || 'E002', techHelp: ex.techHelp === true, signals: ex.signals || [] };
     }
 
     if (!timeLeftOk()) {
-      return {
-        ok: false,
-        errorCode: 'E005',
-        techHelp: true,
-        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
-      };
+      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
     }
 
     const detector = detectSecondPressRelease(ex.rawText);
@@ -125,21 +102,11 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
     if (!llm.ok) {
       const code = llm.errorCode || 'W010';
       safeLog(`error_code:${code}`);
-      return {
-        ok: false,
-        errorCode: code,
-        techHelp: llm.techHelp === true,
-        signals: llm.signals || [{ code, message: 'Verwerking mislukt. Probeer het opnieuw.' }]
-      };
+      return { ok: false, errorCode: code, techHelp: llm.techHelp === true, signals: llm.signals || [{ code, message: 'Verwerking mislukt. Probeer het opnieuw.' }] };
     }
 
     if (!timeLeftOk()) {
-      return {
-        ok: false,
-        errorCode: 'E005',
-        techHelp: true,
-        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
-      };
+      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
     }
 
     // --- Consistency audit (LLM call #2) + Route A referentie-verrijking + labels/index ---
@@ -160,6 +127,9 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
         const allowedLabels = [...sourceLabeled.labels, ...conceptLabeled.labels];
 
+        // (debug zonder inhoud)
+        safeLog(`audit_input_sizes:bron_labels=${sourceLabeled.labels.length} concept_labels=${conceptLabeled.labels.length}`);
+
         // Audit prompt met gelabelde teksten
         const auditInstructions = buildAuditInstructions();
         const auditInput = buildAuditInput({
@@ -178,6 +148,8 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
         });
 
         if (audit.ok) {
+          // BELANGRIJK: audit.ok == call+parse success.
+          // payload.ok (modelOk) is advisory; we gebruiken dit NIET meer om beschikbaarheid te bepalen.
           const payload = audit.data || {};
           const issuesRaw = Array.isArray(payload.issues) ? payload.issues : [];
           const stats = payload.stats || { entities_checked: 0, place_links_checked: 0 };
@@ -188,22 +160,21 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
           safeLog(`audit_status:ok issues=${issues.length} modelOk=${modelOk}`);
 
-          // Als model ok=false maar wél issues: beschouw als bruikbaar
-          if (!modelOk && issues.length === 0) {
-            consistency = { ok: false, errorCode: 'AUDIT_NOT_OK', issues: [], stats };
-          } else {
-            const normalizedAudit = { ok: true, issues, stats };
+          // Forceer ok=true zodra we een valide payload hebben
+          const normalizedAudit = { ok: true, issues, stats };
 
-            // Route A: referentielijst toepassen
-            const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
-            consistency = applyReferenceRulesToAudit(normalizedAudit, ref.entities);
+          // Route A: referentielijst toepassen (deterministisch)
+          const ref = await loadReferenceEntities({ filePath: process.env.REFERENCE_ENTITIES_PATH });
+          consistency = applyReferenceRulesToAudit(normalizedAudit, ref.entities);
 
-            // UX 2.2: index label->zin voor BRONINDEX
-            consistency._locatorIndex = {
-              bron: sourceLabeled.labelToText,
-              concept: conceptLabeled.labelToText
-            };
-          }
+          // UX 2.2: index label->zin voor BRONINDEX
+          consistency._locatorIndex = {
+            bron: sourceLabeled.labelToText,
+            concept: conceptLabeled.labelToText
+          };
+
+          // Optioneel debugveld (geen impact op output tenzij je het gebruikt)
+          consistency._auditModelOk = modelOk;
         } else {
           const ec = audit.errorCode || 'UNKNOWN';
           safeLog(`audit_status:failed errorCode=${ec}`);
@@ -217,12 +188,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
     }
 
     if (!timeLeftOk()) {
-      return {
-        ok: false,
-        errorCode: 'E005',
-        techHelp: true,
-        signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }]
-      };
+      return { ok: false, errorCode: 'E005', techHelp: true, signals: [{ code: 'E005', message: 'Maximale verwerkingstijd overschreden. Herstart de tool (Ctrl+F5) en probeer het opnieuw.' }] };
     }
 
     const { errors, warnings } = runValidators({
@@ -235,12 +201,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
     if (errors.length > 0) {
       safeLog(`error_code:${errors[0].code}`);
-      return {
-        ok: false,
-        errorCode: errors[0].code,
-        techHelp: errors[0].code === 'E005' || errors[0].code === 'W010',
-        signals: errors
-      };
+      return { ok: false, errorCode: errors[0].code, techHelp: errors[0].code === 'E005' || errors[0].code === 'W010', signals: errors };
     }
 
     const out = buildOutput({
@@ -255,13 +216,7 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
   } catch (err) {
     safeLog(`error_code:W010 ${safeErrStr(err)}`);
     console.error('processDocument_exception:', err?.stack || err);
-
-    return {
-      ok: false,
-      errorCode: 'W010',
-      techHelp: true,
-      signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }]
-    };
+    return { ok: false, errorCode: 'W010', techHelp: true, signals: [{ code: 'W010', message: 'Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw.' }] };
   }
 }
 
