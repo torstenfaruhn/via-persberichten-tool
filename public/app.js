@@ -346,7 +346,7 @@
     setState("processing");
     const { ok, json } = await postForm("/api/upload", form, { "X-API-Key": apiKey });
 
-    if (!ok || !json) {
+    if (!json) {
       setSignals([{ code: "W010", message: "Technisch probleem tijdens upload. Probeer een ander bestand of herlaad de pagina." }], true);
       setState("error");
       return;
@@ -370,7 +370,7 @@
     setState("processing");
     const { ok, json } = await postJson("/api/process", { jobId }, { "X-API-Key": apiKey });
 
-    if (!ok || !json) {
+    if (!json) {
       setSignals([{ code: "W010", message: "Technisch probleem tijdens verwerking. Herlaad de pagina (Ctrl+F5) en probeer het opnieuw." }], true);
       setState("error");
       return;
