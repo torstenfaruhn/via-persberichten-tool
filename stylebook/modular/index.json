@@ -1,0 +1,66 @@
+{
+  "version": 1,
+  "generated_from": "stylebook-extract.prompt-versie.regels-only.md",
+  "modules": [
+    {
+      "id": "core",
+      "file": "core.md",
+      "default": true,
+      "description": "Altijd laden. Algemeen + niet-geclassificeerde regels."
+    },
+    {
+      "id": "citaten",
+      "file": "modules/citaten.md",
+      "default": true,
+      "description": "Citaten, aanhalingstekens, interview-stijl."
+    },
+    {
+      "id": "getallen",
+      "file": "modules/getallen-datums-eenheden.md",
+      "default": true,
+      "description": "Getallen, datums, tijden, maten, geld."
+    },
+    {
+      "id": "typografie",
+      "file": "modules/typografie-interpunctie.md",
+      "default": true,
+      "description": "Spaties, streepjes, leestekens, opmaak."
+    },
+    {
+      "id": "hoofdletters_namen",
+      "file": "modules/hoofdletters-namen-titels.md",
+      "default": true,
+      "description": "Hoofdletters, titels, organisaties, functies."
+    },
+    {
+      "id": "taal_grammatica",
+      "file": "modules/taal-grammatica.md",
+      "default": true,
+      "description": "Taal-/grammaticaregels."
+    },
+    {
+      "id": "sport",
+      "file": "modules/sport.md",
+      "default": false,
+      "description": "Sportnotatie, uitslagen, competities."
+    },
+    {
+      "id": "cultuur_feest",
+      "file": "modules/cultuur-feestdagen.md",
+      "default": false,
+      "description": "Feestdagen/terminologie."
+    },
+    {
+      "id": "geografie",
+      "file": "modules/geografie.md",
+      "default": true,
+      "description": "Geografische schrijfwijzen (o.a. Oekraïne)."
+    },
+    {
+      "id": "limburgse_plaatsnamen",
+      "file": "modules/limburgse-plaatsnamen.md",
+      "default": true,
+      "description": "Plaatsnamen + afleidingen (grote data)."
+    }
+  ]
+}

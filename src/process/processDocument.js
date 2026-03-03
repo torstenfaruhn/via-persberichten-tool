@@ -47,10 +47,18 @@ async function processDocument({ inputPath, outputPath, apiKey, maxSeconds }) {
 
     const detector = detectSecondPressRelease(ex.rawText);
     const contact = detectContactBlock(ex.rawText);
-    const stylebookText = await loadStylebookText();
 
-    const instructions = buildInstructions({ stylebookText });
+    // Bouw input eerst: dit bepaalt hoeveel ruimte er overblijft voor het stijlboek.
     const input = buildInput({ sourceText: ex.text });
+
+    // Dynamisch stijlboek-budget om E413/W010 door te grote prompts te voorkomen.
+    const maxTotal = Number(process.env.MAX_LLM_CHARS || 120000);
+    const baseInstructions = buildInstructions({ stylebookText: '' });
+    const buffer = 2000; // reserve voor schema/overhead
+    const budget = Math.max(0, Math.floor(maxTotal - baseInstructions.length - input.length - buffer));
+
+    const stylebookText = await loadStylebookText({ sourceText: ex.text, maxChars: budget });
+    const instructions = buildInstructions({ stylebookText });
 
     const llm = await generateStructured({
       apiKey,

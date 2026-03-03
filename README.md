@@ -42,14 +42,35 @@ Een eenvoudige webtool (1 pagina) om een persbericht (.txt/.docx/.pdf) te upload
 - `MAX_UPLOAD_MB` (default 10)
 - `OPENAI_MODEL` (default gpt-4o-mini)
 - `OPENAI_AUDIT_MODEL` (optional; default: `OPENAI_MODEL`)
-- `STYLEBOOK_PATH` (default: stylebook/stylebook-extract.md)
+- `MAX_LLM_CHARS` (default 120000; harde limiet voor instructies + bron)
+- `STYLEBOOK_MODE` (default `modular`)
+  - `modular`: gebruikt `stylebook/modular/index.json` + modules op basis van auto-detect.
+  - `legacy`: gebruikt het oude gedrag (1 groot bestand, zoals `stylebook/stylebook-extract.md`).
+  - `file`: laadt 1 bestand via `STYLEBOOK_PATH` (TXT/MD/DOCX/PDF).
+- `STYLEBOOK_PATH` (alleen relevant bij `STYLEBOOK_MODE=file` of `legacy`)
+- `STYLEBOOK_MODULES` (modular; optioneel: force-include, comma-separated ids)
+- `STYLEBOOK_EXCLUDE_MODULES` (modular; optioneel: uitsluiten, comma-separated ids)
+- `STYLEBOOK_AUTODETECT_ONLY` (modular; default `limburgse_plaatsnamen`)
 - `DISABLE_CONSISTENCY_AUDIT` (set to `1` om de Consistentiecheck uit te zetten)
 - `REFERENCE_ENTITIES_PATH` (optional; pad naar lokale referentielijst JSON. Default: `src/reference/entities.nl.json`)
 
 ## Stijlboek (leidend)
-De map `stylebook/` bevat de stijlboekbronnen. De tool gebruikt in productie **alleen** `stylebook/stylebook-extract.md` via `STYLEBOOK_PATH`.
+De tool kan met 2 varianten werken:
 
-De server leest het stijlboek in (TXT/MD/DOCX/PDF), zet het om naar platte tekst en voegt dit toe aan de LLM-instructies via `buildInstructions({ stylebookText })`.
+### 1) Modulair (default)
+- Map: `stylebook/modular/`
+- Bestanden:
+  - `core.md` (altijd)
+  - `modules/*.md` (per onderwerp)
+  - `index.json` (lijst + defaults)
+- Auto-detect (op basis van de brontekst):
+  - `limburgse_plaatsnamen` wordt alleen toegevoegd als er een Limburgse plaatsnaam/afleiding wordt herkend.
+  - `sport` en `cultuur_feest` worden alleen toegevoegd als er duidelijke sport-/feestdag-termen staan.
 
-- Maximaal 100.000 tekens worden meegestuurd (daarna afkappen).
-- Als het stijlboek ontbreekt of niet leesbaar is: **stil doorgaan** zonder stijlboek (geen UI-melding; alleen technische foutcode in serverlog).
+Je kunt modules forceren of uitsluiten via `STYLEBOOK_MODULES` en `STYLEBOOK_EXCLUDE_MODULES`.
+
+### 2) Legacy / 1 bestand
+- `STYLEBOOK_MODE=legacy` gebruikt het oude gedrag (zoals `stylebook/stylebook-extract.md`).
+- `STYLEBOOK_MODE=file` laadt 1 bestand via `STYLEBOOK_PATH`.
+
+De server zet DOCX/PDF zo nodig om naar platte tekst, en voegt het stijlboek toe aan de LLM-instructies via `buildInstructions({ stylebookText })`.
