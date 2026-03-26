@@ -10,7 +10,7 @@ function buildInstructions({ stylebookText }) {
     'Citaten blijven letterlijk en worden toegeschreven.',
     'Aanhalingstekens: gebruik Nederlandse typografische aanhalingstekens: „open” en ”sluit”. Gebruik geen ".',
     'Waarom en Hoe vul je alleen in als dat letterlijk in de bron staat.',
-    'INTRO-regel: de intro bestaat uit precies 2 zinnen. Maximaal 20 woorden per zin.',
+    'INTRO-regel: de intro bestaat uit precies 3 zinnen. Maximaal 20 woorden per zin.',
     'Geef ALLEEN geldige JSON terug conform het schema. Geen extra tekst.'
   ].join('\n') + style;
 }
