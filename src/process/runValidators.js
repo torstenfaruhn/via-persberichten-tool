@@ -17,7 +17,7 @@ function splitParagraphs(body) {
 }
 
 function ordinalWordNl(n) {
-  // 1 -> eerste, 2 -> tweede, ... (tot 10), daarna "11e" etc.
+  // 1 -> eerste, 2 -> tweede, ... (tot 10), daarna "11de" etc.
   const map = {
     1: 'eerste',
     2: 'tweede',
